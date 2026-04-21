@@ -33,6 +33,8 @@ export interface IGraphEdgeDef {
 export interface IAgentGraph {
   /** Identifiant unique du graphe */
   id: string;
+  /** ID de la memoire a utiliser (sinon memoire par defaut) */
+  memoryId?: string;
   /** Nœuds du graphe */
   nodes: IGraphNodeDef[];
   /** Arêtes du graphe */

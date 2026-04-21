@@ -1,8 +1,9 @@
-import { IModelConfig } from '../interfaces/model.interface';
-import { IMcpServerConfig } from '../interfaces/tool.interface';
+import { IModelConfig } from '../models/model.interface';
+import { IMcpServerConfig, IToolConfig } from '../interfaces/tool.interface';
+import { IMemoryConfig } from '../interfaces/memory.interface';
 import { IAcpServerConfig } from '../interfaces/acp.interface';
-import { IAgentConfig } from '../interfaces/agent.interface';
-import { IAgentGraph } from '../interfaces/agent-graph.interface';
+import { IAgentConfig } from '../agents/agent';
+import { IAgentGraph } from '../agents/agent-graph.interface';
 
 /**
  * Options de configuration du module AiKit.
@@ -19,6 +20,21 @@ export interface AiKitModuleOptions {
    * Configurations des serveurs MCP à connecter au démarrage.
    */
   mcpServers?: IMcpServerConfig[];
+
+  /**
+   * Outils personnalisés à enregistrer dans McpService.
+   */
+  tools?: IToolConfig[];
+
+  /**
+   * Memoires personnalisees a enregistrer dans MemoryService.
+   */
+  memories?: IMemoryConfig[];
+
+  /**
+   * Identifiant de la memoire par defaut.
+   */
+  defaultMemoryId?: string;
 
   /**
    * Configuration optionnelle du serveur ACP.
@@ -39,6 +55,7 @@ export interface AiKitModuleOptions {
   /**
    * Implémentation d'un checkpointer personnalisé pour LangGraph.
    * Si absent, un InMemorySaver est utilisé.
+   * @deprecated Utiliser `memories` + `defaultMemoryId`.
    */
   checkpointer?: unknown;
 
@@ -50,9 +67,50 @@ export interface AiKitModuleOptions {
 }
 
 /**
- * Options de configuration dynamique après bootstrap.
+ * Options de configuration d'un feature module.
  *
- * Cette configuration est additive par défaut.
+ * Permet à un module NestJS d'enregistrer des agents, outils MCP, modèles ou graphes
+ * sans passer par forRoot() — via AiKitModule.forFeature().
+ */
+export interface AiKitFeatureOptions {
+  /**
+   * Agents à enregistrer dans AgentService au boot du feature module.
+   * Fusionnés avec les agents existants (pas de remplacement).
+   */
+  agents?: IAgentConfig[];
+
+  /**
+   * Serveurs MCP à connecter et outils à exposer dans McpService.
+   * Fusionnés avec les serveurs existants par id.
+   */
+  mcpServers?: IMcpServerConfig[];
+
+  /**
+   * Outils personnalisés à enregistrer dans McpService.
+   * Fusionnés avec les outils existants par id.
+   */
+  tools?: IToolConfig[];
+
+  /**
+   * Memoires personnalisees a enregistrer dans MemoryService.
+   */
+  memories?: IMemoryConfig[];
+
+  /**
+   * Modèles à enregistrer dans ModelService.
+   */
+  models?: IModelConfig[];
+
+  /**
+   * Graphes d'agents à enregistrer dans AgentGraphService.
+   */
+  graphs?: IAgentGraph[];
+}
+
+/**
+ * Options de configuration dynamique aprs bootstrap.
+ *
+ * Cette configuration est additive par dfaut.
  */
 export type AiKitRuntimeConfigureOptions = Omit<Partial<AiKitModuleOptions>, 'acp'> & {
   /**

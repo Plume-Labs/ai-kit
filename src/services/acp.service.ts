@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { DeepAgentsServer, DeepAgentConfig } from 'deepagents-acp';
 import { IAcpServerConfig } from '../interfaces/acp.interface';
-import { ModelService } from './model.service';
+import { ModelService } from '../models/model.service';
 import { McpService } from './mcp.service';
 import { AiKitModuleOptions } from '../module/ai-kit.config';
 import { AI_KIT_OPTIONS } from '../module/ai-kit.tokens';

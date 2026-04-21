@@ -1,7 +1,7 @@
 import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
-import { IModelConfig, IModelProvider } from '../interfaces/model.interface';
-import { buildChatModel } from '../factories/models/model.factory';
+import { IModelConfig, IModelProvider } from './model.interface';
+import { buildChatModel } from './model.factory';
 import { AiKitModuleOptions } from '../module/ai-kit.config';
 import { AI_KIT_OPTIONS } from '../module/ai-kit.tokens';
 

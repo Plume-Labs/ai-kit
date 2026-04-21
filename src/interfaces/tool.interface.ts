@@ -1,3 +1,5 @@
+import { StructuredTool } from '@langchain/core/tools';
+
 /**
  * Représentation d'un outil (tool) exposé aux agents.
  * Abstraction sur StructuredTool de LangChain.
@@ -9,6 +11,16 @@ export interface ITool {
   description: string;
   /** Schéma JSON des paramètres d'entrée */
   inputSchema?: Record<string, unknown>;
+}
+
+/**
+ * Configuration d'un outil personnalisé à enregistrer.
+ */
+export interface IToolConfig {
+  /** Identifiant unique de l'outil */
+  id: string;
+  /** L'implémentation de l'outil (StructuredTool de LangChain) */
+  tool: StructuredTool;
 }
 
 /**

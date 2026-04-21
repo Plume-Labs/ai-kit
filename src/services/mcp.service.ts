@@ -9,6 +9,8 @@ import { AI_KIT_OPTIONS } from '../module/ai-kit.tokens';
 /**
  * Service de gestion des serveurs MCP (Model Context Protocol).
  * Abstrait MultiServerMCPClient — les utilisateurs interagissent uniquement via ITool[].
+ *
+ * Supporte également un registre d'outils personnalisés (StructuredTool enregistrés).
  */
 @Injectable()
 export class McpService implements OnModuleInit, OnModuleDestroy {
@@ -16,6 +18,7 @@ export class McpService implements OnModuleInit, OnModuleDestroy {
   private client?: MultiServerMCPClient;
   private tools: StructuredTool[] = [];
   private readonly serverRegistry = new Map<string, IMcpServerConfig>();
+  private readonly customToolRegistry = new Map<string, StructuredTool>();
 
   constructor(
     @Inject(AI_KIT_OPTIONS)
@@ -24,6 +27,9 @@ export class McpService implements OnModuleInit, OnModuleDestroy {
 
   async onModuleInit(): Promise<void> {
     await this.configureServers(this.options.mcpServers ?? []);
+    if (this.options.tools?.length) {
+      this.registerTools(this.options.tools);
+    }
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -52,6 +58,42 @@ export class McpService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
+   * Enregistre un outil personnalisé (StructuredTool).
+   * L'outil sera inclus dans la liste des outils disponibles.
+   */
+  registerTool(id: string, tool: StructuredTool): void {
+    this.customToolRegistry.set(id, tool);
+  }
+
+  /**
+   * Enregistre plusieurs outils personnalisés.
+   */
+  registerTools(tools: Array<{ id: string; tool: StructuredTool }>): void {
+    for (const { id, tool } of tools) {
+      this.registerTool(id, tool);
+    }
+  }
+
+  /**
+   * Retourne un outil personnalisé enregistré.
+   * Lève une erreur si l'outil n'existe pas.
+   */
+  getTool(id: string): StructuredTool {
+    const tool = this.customToolRegistry.get(id);
+    if (!tool) {
+      throw new Error(`[AiKit] Outil introuvable : ${id}`);
+    }
+    return tool;
+  }
+
+  /**
+   * Retourne la liste de tous les outils personnalisés enregistrés.
+   */
+  listCustomTools(): Array<{ id: string; tool: StructuredTool }> {
+    return Array.from(this.customToolRegistry.entries()).map(([id, tool]) => ({ id, tool }));
+  }
+
+  /**
    * Retourne les outils MCP disponibles sous forme d'ITool[].
    */
   getTools(): ITool[] {
@@ -73,9 +115,15 @@ export class McpService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * @internal — Retourne les StructuredTool natifs pour injection dans DeepAgent.
+   * Inclut les outils MCP et les outils personnalisés enregistrés.
    */
   _getInternalTools(serverIds?: string[]): StructuredTool[] {
-    return this.tools;
+    // Combine outils MCP + outils personnalisés
+    const allTools = [
+      ...this.tools,
+      ...Array.from(this.customToolRegistry.values()),
+    ];
+    return allTools;
   }
 
   // ─── Private ─────────────────────────────────────────────────────────────

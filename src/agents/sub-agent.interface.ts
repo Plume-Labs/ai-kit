@@ -1,4 +1,4 @@
-import { IHumanInTheLoopConfig } from './hitl.interface';
+import { IHumanInTheLoopConfig } from '../interfaces/hitl.interface';
 
 /**
  * Spécification d'un sous-agent.

@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { SubAgent, CompiledSubAgent, AsyncSubAgent } from 'deepagents';
-import { ISubAgentSpec, ICompiledSubAgent } from '../interfaces/sub-agent.interface';
-import { ModelService } from './model.service';
+import { ISubAgentSpec, ICompiledSubAgent } from './sub-agent.interface';
+import { ModelService } from '../models/model.service';
 
 /**
  * Service de gestion des sous-agents.
@@ -28,13 +28,12 @@ export class SubAgentService {
 
     if (spec.graphId) {
       // Sous-agent asynchrone distant (LangGraph Cloud / ACP)
-      const asyncSubAgent: AsyncSubAgent = {
+      internal = {
         name: spec.name,
         description: spec.description,
         graphId: spec.graphId,
         ...(spec.remoteUrl ? { url: spec.remoteUrl } : {}),
       } as AsyncSubAgent;
-      internal = asyncSubAgent;
     } else {
       // Sous-agent synchrone local
       const model = spec.modelId

@@ -1,7 +1,7 @@
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { ChatOpenAI } from '@langchain/openai';
 import { ChatOllama } from '@langchain/ollama';
-import { IModelConfig } from '../../interfaces/model.interface';
+import { IModelConfig } from './model.interface';
 
 /**
  * Factory interne : instancie le bon BaseChatModel selon le provider.

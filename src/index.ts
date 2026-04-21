@@ -1,6 +1,6 @@
 // ─── Module ──────────────────────────────────────────────────────────────────
 export { AiKitModule } from './module/ai-kit.module';
-export type { AiKitModuleOptions, AiKitRuntimeConfigureOptions } from './module/ai-kit.config';
+export type { AiKitModuleOptions, AiKitRuntimeConfigureOptions, AiKitFeatureOptions } from './module/ai-kit.config';
 export type { AiKitModuleAsyncOptions } from './module/ai-kit.module';
 
 // ─── Interfaces publiques ─────────────────────────────────────────────────────
@@ -8,9 +8,9 @@ export type {
   IModelConfig,
   IModelProvider,
   ModelProviderType,
-} from './interfaces/model.interface';
+} from './models/model.interface';
 
-export type { ITool, IMcpServerConfig, IMcpStdioServerConfig, IMcpSseServerConfig } from './interfaces/tool.interface';
+export type { ITool, IMcpServerConfig, IMcpStdioServerConfig, IMcpSseServerConfig, IToolConfig } from './interfaces/tool.interface';
 
 export type {
   IHumanInTheLoopConfig,
@@ -19,23 +19,22 @@ export type {
   IInterruptPayload,
 } from './interfaces/hitl.interface';
 
-export type { ISubAgentSpec, ICompiledSubAgent } from './interfaces/sub-agent.interface';
+export type { ISubAgentSpec, ICompiledSubAgent } from './agents/sub-agent.interface';
 
 export type {
-  IAgent,
   IAgentConfig,
   IAgentRunOptions,
   IAgentResult,
   IAgentMessage,
   IAgentStreamEvent,
-} from './interfaces/agent.interface';
+} from './agents/agent';
 
 export type {
   IAgentGraph,
   IGraphNodeDef,
   IGraphEdgeDef,
   IGraphRunResult,
-} from './interfaces/agent-graph.interface';
+} from './agents/agent-graph.interface';
 
 export type {
   IAcpServerConfig,
@@ -45,24 +44,45 @@ export type {
   IAcpAuthMethodEnvVar,
 } from './interfaces/acp.interface';
 
+export type { IMemoryAdapter, IMemoryConfig } from './interfaces/memory.interface';
+
+// ─── Objets domaine ───────────────────────────────────────────────────────────
+export { Agent } from './agents/agent';
+export { AgentGraph } from './agents/agent-graph';
+
+// ─── Factories ────────────────────────────────────────────────────────────────
+export { AgentFactory } from './agents/agent.factory';
+export { AgentGraphFactory } from './agents/agent-graph.factory';
+
+// ─── Décorateurs d'injection ──────────────────────────────────────────────────
+export { InjectAgent, InjectAgentGraph, getAgentToken, getAgentGraphToken } from './agents/agent.tokens';
+export { InjectTool, getToolToken } from './interfaces/tool.tokens';
+export { InjectMemory, getMemoryToken } from './interfaces/memory.tokens';
+
 // ─── Services (pour injection directe) ───────────────────────────────────────
-export { ModelService } from './services/model.service';
+export { ModelService } from './models/model.service';
 export { McpService } from './services/mcp.service';
+export { MemoryService } from './services/memory.service';
 export { HitlService } from './services/hitl.service';
-export { SubAgentService } from './services/sub-agent.service';
-export { AgentService } from './services/agent.service';
-export { AgentGraphService } from './services/agent-graph.service';
+export { SubAgentService } from './agents/sub-agent.service';
+export { AgentService } from './agents/agent.service';
+export { AgentGraphService } from './agents/agent-graph.service';
 export { AcpService } from './services/acp.service';
 export { AiKitConfiguratorService } from './services/ai-kit-configurator.service';
+export { AiKitFeatureInitializer } from './services/ai-kit-feature-initializer.service';
 
 // ─── Tokens d'injection ───────────────────────────────────────────────────────
 export {
   AI_KIT_OPTIONS,
   AI_KIT_MODEL_SERVICE,
   AI_KIT_MCP_SERVICE,
+  AI_KIT_MEMORY_SERVICE,
   AI_KIT_AGENT_SERVICE,
   AI_KIT_AGENT_GRAPH_SERVICE,
   AI_KIT_SUB_AGENT_SERVICE,
   AI_KIT_HITL_SERVICE,
   AI_KIT_ACP_SERVICE,
+  AI_KIT_FEATURE_OPTIONS,
 } from './module/ai-kit.tokens';
+
+export { CheckpointerMemoryAdapter, InMemoryAdapter } from './interfaces/memory.interface';
