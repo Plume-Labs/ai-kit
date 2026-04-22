@@ -25,6 +25,16 @@ export interface ISubAgentSpec {
 }
 
 /**
+ * Classe de définition de sous-agent (utilisée avec le décorateur SubAgentDefinition).
+ */
+export type ISubAgentDefinitionClass = abstract new (...args: any[]) => unknown;
+
+/**
+ * Entrée supportée pour déclarer un sous-agent: spec brute ou classe décorée.
+ */
+export type SubAgentDefinitionInput = ISubAgentSpec | ISubAgentDefinitionClass;
+
+/**
  * Sous-agent compilé (wrappé, prêt à l'injection dans un agent parent).
  * Opaque pour les utilisateurs — géré en interne par SubAgentService.
  */

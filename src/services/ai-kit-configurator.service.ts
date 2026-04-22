@@ -8,6 +8,7 @@ import { MemoryService } from './memory.service';
 import { AgentService } from '../agents/agent.service';
 import { AgentGraphService } from '../agents/agent-graph.service';
 import { AcpService } from './acp.service';
+import { SecurityToolService } from '../security/security-tool.service';
 
 /**
  * Façade de configuration runtime pour éviter de dépendre uniquement de forRoot().
@@ -17,6 +18,7 @@ export class AiKitConfiguratorService {
   constructor(
     private readonly modelService: ModelService,
     private readonly mcpService: McpService,
+    private readonly securityToolService: SecurityToolService,
     private readonly memoryService: MemoryService,
     private readonly agentService: AgentService,
     private readonly agentGraphService: AgentGraphService,
@@ -35,6 +37,10 @@ export class AiKitConfiguratorService {
       await this.mcpService.configureServers(options.mcpServers, {
         replace: options.replaceMcpServers,
       });
+    }
+
+    if (options.securityTools?.length) {
+      this.securityToolService.registerTools(options.securityTools);
     }
 
     if (options.memories?.length) {

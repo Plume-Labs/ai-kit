@@ -1,7 +1,15 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { SubAgent, CompiledSubAgent, AsyncSubAgent } from 'deepagents';
-import { ISubAgentSpec, ICompiledSubAgent } from './sub-agent.interface';
+import {
+  ISubAgentSpec,
+  ICompiledSubAgent,
+  SubAgentDefinitionInput,
+} from './sub-agent.interface';
 import { ModelService } from '../models/model.service';
+import {
+  getSubAgentDefinitionMetadata,
+  isSubAgentDefinitionClass,
+} from './sub-agent.definition';
 
 /**
  * Service de gestion des sous-agents.
@@ -19,7 +27,9 @@ export class SubAgentService {
    * Compile un ISubAgentSpec en ICompiledSubAgent.
    * Met en cache le résultat par nom.
    */
-  compileSubAgent(spec: ISubAgentSpec): ICompiledSubAgent {
+  compileSubAgent(input: SubAgentDefinitionInput): ICompiledSubAgent {
+    const spec = this.normalizeSpec(input);
+
     if (this.registry.has(spec.name)) {
       return this.registry.get(spec.name)!;
     }
@@ -65,8 +75,33 @@ export class SubAgentService {
   /**
    * Compile plusieurs specs d'un coup.
    */
-  compileSubAgents(specs: ISubAgentSpec[]): ICompiledSubAgent[] {
+  compileSubAgents(specs: SubAgentDefinitionInput[]): ICompiledSubAgent[] {
     return specs.map((s) => this.compileSubAgent(s));
+  }
+
+  private normalizeSpec(input: SubAgentDefinitionInput): ISubAgentSpec {
+    if (isSubAgentDefinitionClass(input)) {
+      const metadata = getSubAgentDefinitionMetadata(input);
+      if (!metadata) {
+        throw new Error(
+          `[AiKit] Sous-agent introuvable pour la classe "${input.name || 'AnonymousClass'}": utilisez @SubAgentDefinition(...)`,
+        );
+      }
+      this.assertSpec(metadata, `Classe ${input.name || 'AnonymousClass'}`);
+      return metadata;
+    }
+
+    this.assertSpec(input, 'Spec');
+    return input;
+  }
+
+  private assertSpec(spec: ISubAgentSpec, context: string): void {
+    if (!spec?.name || typeof spec.name !== 'string') {
+      throw new Error(`[AiKit] ${context}: "name" de sous-agent invalide`);
+    }
+    if (!spec.description || typeof spec.description !== 'string') {
+      throw new Error(`[AiKit] ${context}: "description" de sous-agent invalide`);
+    }
   }
 
   /**

@@ -1,11 +1,11 @@
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import {
   Agent,
-  IAgentConfig,
   IAgentResult,
   IAgentRunOptions,
   IAgentStreamEvent,
 } from './agent';
+import { AgentDefinitionInput, resolveAgentDefinitionInput } from './agent.definition';
 import { AgentFactory } from './agent.factory';
 import { ModelService } from '../models/model.service';
 import { McpService } from '../services/mcp.service';
@@ -56,7 +56,7 @@ export class AgentService implements OnModuleInit {
    * Enregistre plusieurs agents en lot.
    */
   async registerAgents(
-    configs: IAgentConfig[],
+    configs: AgentDefinitionInput[],
     opts?: { overwrite?: boolean },
   ): Promise<Agent[]> {
     return Promise.all(configs.map((c) => this.registerAgent(c, opts)));
@@ -67,9 +67,11 @@ export class AgentService implements OnModuleInit {
    * Retourne l'objet `Agent` prêt à l'exécution.
    */
   async registerAgent(
-    config: IAgentConfig,
+    input: AgentDefinitionInput,
     opts?: { overwrite?: boolean },
   ): Promise<Agent> {
+    const config = resolveAgentDefinitionInput(input);
+
     if (this.registry.has(config.id) && !opts?.overwrite) {
       return this.registry.get(config.id)!;
     }

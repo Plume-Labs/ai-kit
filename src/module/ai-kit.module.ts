@@ -11,13 +11,17 @@ import { AcpService } from '../services/acp.service';
 import { AiKitConfiguratorService } from '../services/ai-kit-configurator.service';
 import { AiKitFeatureInitializer } from '../services/ai-kit-feature-initializer.service';
 import { getAgentToken, getAgentGraphToken } from '../agents/agent.tokens';
+import { resolveAgentDefinitionInput } from '../agents/agent.definition';
 import { getToolToken } from '../interfaces/tool.tokens';
+import { getSecurityToolToken } from '../interfaces/security-tool.tokens';
 import { getMemoryToken } from '../interfaces/memory.tokens';
 import { MemoryService } from '../services/memory.service';
+import { SecurityToolService } from '../security/security-tool.service';
 
 const ALL_SERVICES = [
   ModelService,
   McpService,
+  SecurityToolService,
   MemoryService,
   HitlService,
   SubAgentService,
@@ -141,11 +145,14 @@ export class AiKitModule {
 
     // Un provider par agent déclaré : résout et enregistre l'Agent dans AgentService,
     // puis le rend injectable via @InjectAgent('id').
-    const agentProviders: FactoryProvider[] = (options.agents ?? []).map((config) => ({
-      provide: getAgentToken(config.id),
-      useFactory: (agentService: AgentService) => agentService.registerAgent(config),
-      inject: [AgentService],
-    }));
+    const agentProviders: FactoryProvider[] = (options.agents ?? []).map((input) => {
+      const config = resolveAgentDefinitionInput(input);
+      return {
+        provide: getAgentToken(config.id),
+        useFactory: (agentService: AgentService) => agentService.registerAgent(config),
+        inject: [AgentService],
+      };
+    });
 
     // Un provider par graphe déclaré : compile l'AgentGraph dans AgentGraphService,
     // puis le rend injectable via @InjectAgentGraph('id').
@@ -166,6 +173,14 @@ export class AiKitModule {
       inject: [McpService],
     }));
 
+    // Un provider par outil de sécurité : le compile via SecurityToolService,
+    // puis le rend injectable via @InjectSecurityTool('id').
+    const securityToolProviders: FactoryProvider[] = (options.securityTools ?? []).map((config) => ({
+      provide: getSecurityToolToken(config.id),
+      useFactory: (securityToolService: SecurityToolService) => securityToolService.registerTool(config),
+      inject: [SecurityToolService],
+    }));
+
     // Un provider par memoire declaree : enregistre l'adaptateur dans MemoryService,
     // puis le rend injectable via @InjectMemory('id').
     const memoryProviders: FactoryProvider[] = (options.memories ?? []).map((config) => ({
@@ -183,6 +198,7 @@ export class AiKitModule {
       ...agentProviders,
       ...graphProviders,
       ...toolProviders,
+      ...securityToolProviders,
       ...memoryProviders,
     ];
 
@@ -191,6 +207,7 @@ export class AiKitModule {
       ...agentProviders.map((p) => p.provide),
       ...graphProviders.map((p) => p.provide),
       ...toolProviders.map((p) => p.provide),
+      ...securityToolProviders.map((p) => p.provide),
       ...memoryProviders.map((p) => p.provide),
     ];
 

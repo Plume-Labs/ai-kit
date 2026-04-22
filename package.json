@@ -32,12 +32,13 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "prepare": "npm run build",
-    "test": "npm run build && node --test",
-    "test:watch": "npm run build && node --test --watch"
+    "test": "npm run build && vitest run",
+    "test:watch": "npm run build && vitest"
   },
   "devDependencies": {
     "@types/node": "^24.12.2",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
   },
   "dependencies": {
     "@langchain/core": "^1.1.40",

@@ -33,9 +33,9 @@
 
 ## Developer Workflows
 - Build library: `npm run build` (TypeScript only; outputs `dist/`).
-- Run tests: `npm test` (script builds first, then runs `node --test`).
+- Run tests: `npm test` (script builds first, then runs `vitest run`).
 - Watch tests: `npm run test:watch`.
-- Tests in `test/*.js` import from `dist/...`; if you run `node --test` directly, build first.
+- Tests in `test/*.js` import from `dist/...`; if you run `vitest` directly, build first.
 
 ## Safe Change Guidelines
 - When adding a new configurable resource, wire it through all 3 entry points: `AiKitModuleOptions`, `forFeature` init path, and `AiKitConfiguratorService.configure`.

@@ -33,6 +33,15 @@
   - [AcpService](#acpservice)
   - [AiKitConfiguratorService](#aikitconfiguratorservice)
 - [Interfaces](#interfaces)
+- [Outils de sécurité LLM](#outils-de-sécurité-llm)
+  - [Presets disponibles](#presets-disponibles)
+  - [Enregistrement dans forRoot](#enregistrement-dans-forroot)
+  - [Enregistrement dans forFeature](#enregistrement-dans-forfeature)
+  - [Configuration runtime](#configuration-runtime-1)
+  - [Injection directe](#injection-directe)
+  - [Appel programmatique](#appel-programmatique)
+  - [SecurityToolService](#securitytoolservice)
+  - [Interfaces](#interfaces-de-sécurité)
 - [Tokens d'injection](#tokens-dinjection)
 - [Exemples avancés](#exemples-avancés)
 - [Variables d'environnement](#variables-denvironnement)
@@ -120,6 +129,7 @@ export class AppModule {}
 | `models` | `IModelConfig[]` | Configurations des providers de modèles. Le premier devient le provider par défaut. |
 | `mcpServers` | `IMcpServerConfig[]` | Serveurs MCP à connecter au démarrage. |
 | `tools` | `IToolConfig[]` | Outils personnalisés à enregistrer. |
+| `securityTools` | `ISecurityToolConfig[]` | Outils de sécurité prêts à l'emploi (presets). |
 | `memories` | `IMemoryConfig[]` | Mémoires personnalisées à enregistrer. |
 | `defaultMemoryId` | `string` | ID de la mémoire par défaut. |
 | `acp` | `IAcpServerConfig` | Configuration du serveur ACP (Agent Communication Protocol). Optionnel. |
@@ -214,6 +224,7 @@ Options de `AiKitRuntimeConfigureOptions` :
 | `replaceMcpServers` | `boolean` | Remplace tous les serveurs MCP existants avant rechargement. |
 | `overwriteAgents` | `boolean` | Autorise l'écrasement d'un agent déjà enregistré. |
 | `restartAcp` | `boolean` | Force le redémarrage du serveur ACP. |
+| `securityTools` | `ISecurityToolConfig[]` | Outils de sécurité à ajouter à chaud. |
 
 ---
 
@@ -279,6 +290,7 @@ export class ReportingModule {}
 | `agents` | `IAgentConfig[]` | Agents à enregistrer dans `AgentService`. |
 | `mcpServers` | `IMcpServerConfig[]` | Serveurs MCP à connecter. |
 | `tools` | `IToolConfig[]` | Outils personnalisés à enregistrer dans `McpService`. |
+| `securityTools` | `ISecurityToolConfig[]` | Outils de sécurité (presets) à enregistrer dans `SecurityToolService`. |
 | `memories` | `IMemoryConfig[]` | Mémoires personnalisées à enregistrer dans `MemoryService`. |
 | `models` | `IModelConfig[]` | Modèles à enregistrer dans `ModelService`. |
 | `graphs` | `IAgentGraph[]` | Graphes d'agents à compiler dans `AgentGraphService`. |
@@ -332,6 +344,7 @@ export class ReportingService {
 | `@InjectAgent(id)` | `Agent` | Injecte l'objet `Agent` correspondant à l'id. |
 | `@InjectAgentGraph(id)` | `AgentGraph` | Injecte l'objet `AgentGraph` correspondant à l'id. |
 | `@InjectTool(id)` | `StructuredTool` | Injecte l'outil `StructuredTool` correspondant à l'id. |
+| `@InjectSecurityTool(id)` | `StructuredTool` | Injecte l'outil de sécurité correspondant à l'id. |
 | `@InjectMemory(id)` | `IMemoryAdapter` | Injecte l'adaptateur mémoire correspondant à l'id. |
 
 Pour les cas avancés (providers dynamiques, tests unitaires) :
@@ -901,6 +914,218 @@ interface ISubAgentSpec {
 
 ---
 
+## Outils de sécurité LLM
+
+`ai-kit` inclut une collection d'**outils de sécurité prêts à l'emploi** (presets), conçus pour protéger les entrées et sorties des LLM. Ces outils s'intègrent nativement dans les agents via `McpService` : ils sont automatiquement disponibles pour tous les agents qui ont accès aux outils.
+
+### Presets disponibles
+
+| Preset | ID | Description |
+|--------|-----|-------------|
+| `prompt-injection-guard` | `string` | Détecte les tentatives de prompt injection et jailbreak dans un texte. |
+| `pii-redactor` | `string` | Masque les données personnelles (email, téléphone, IBAN, carte bancaire). |
+| `content-policy-guard` | `string` | Vérifie un texte contre une liste de termes interdits. |
+
+### Enregistrement dans forRoot
+
+```typescript
+import { AiKitModule } from 'ai-kit';
+
+AiKitModule.forRoot({
+  models: [{ id: 'gpt4o', provider: 'openai', modelName: 'gpt-4o' }],
+  securityTools: [
+    { id: 'injection-guard', preset: 'prompt-injection-guard' },
+    { id: 'pii-cleaner',     preset: 'pii-redactor' },
+    { id: 'policy-check',    preset: 'content-policy-guard' },
+  ],
+})
+```
+
+### Enregistrement dans forFeature
+
+```typescript
+// security.module.ts
+import { Module } from '@nestjs/common';
+import { AiKitModule } from 'ai-kit';
+
+@Module({
+  imports: [
+    AiKitModule.forFeature({
+      securityTools: [
+        {
+          id: 'injection-guard',
+          preset: 'prompt-injection-guard',
+          name: 'check_injection',           // Nom exposé au LLM (optionnel)
+          description: 'Analyse une entrée utilisateur pour détecter du prompt injection.',
+          promptInjection: {
+            blockedPatterns: ['ignore instructions', 'jailbreak', 'bypass'],
+          },
+        },
+        {
+          id: 'pii-cleaner',
+          preset: 'pii-redactor',
+          piiRedactor: {
+            replacement: '***',
+            redactEmails: true,
+            redactPhones: true,
+            redactIban: false,       // Désactiver la détection IBAN
+            redactCreditCards: true,
+          },
+        },
+        {
+          id: 'policy-check',
+          preset: 'content-policy-guard',
+          contentPolicy: {
+            blockedTerms: ['violence', 'haine', 'malware', 'bomb'],
+          },
+        },
+      ],
+    }),
+  ],
+})
+export class SecurityModule {}
+```
+
+### Configuration runtime
+
+Les outils de sécurité peuvent aussi être ajoutés dynamiquement après bootstrap :
+
+```typescript
+import { Injectable } from '@nestjs/common';
+import { AiKitConfiguratorService } from 'ai-kit';
+
+@Injectable()
+export class SecuritySetupService {
+  constructor(private readonly configurator: AiKitConfiguratorService) {}
+
+  async enableGuardrails() {
+    await this.configurator.configure({
+      securityTools: [
+        { id: 'injection-guard', preset: 'prompt-injection-guard' },
+        { id: 'pii-cleaner',     preset: 'pii-redactor' },
+      ],
+    });
+  }
+}
+```
+
+### Injection directe
+
+Chaque outil de sécurité déclaré dans `forFeature()` est injectable via `@InjectSecurityTool(id)` :
+
+```typescript
+import { Injectable } from '@nestjs/common';
+import { InjectSecurityTool } from 'ai-kit';
+import { StructuredTool } from '@langchain/core/tools';
+
+@Injectable()
+export class ContentService {
+  constructor(
+    @InjectSecurityTool('injection-guard') private readonly injectionGuard: StructuredTool,
+    @InjectSecurityTool('pii-cleaner')     private readonly piiCleaner: StructuredTool,
+    @InjectSecurityTool('policy-check')    private readonly policyCheck: StructuredTool,
+  ) {}
+
+  async validateInput(userInput: string) {
+    const guardResult  = JSON.parse(await this.injectionGuard.invoke({ text: userInput }));
+    const policyResult = JSON.parse(await this.policyCheck.invoke({ text: userInput }));
+
+    return {
+      safe: guardResult.verdict === 'safe' && policyResult.verdict === 'allowed',
+      injectionMatches: guardResult.matches,
+      policyMatches: policyResult.matches,
+    };
+  }
+
+  async sanitizeOutput(llmOutput: string) {
+    const result = JSON.parse(await this.piiCleaner.invoke({ text: llmOutput }));
+    return result.redactedText;
+  }
+}
+```
+
+### Appel programmatique
+
+Vous pouvez aussi utiliser `SecurityToolService` directement :
+
+```typescript
+import { Injectable } from '@nestjs/common';
+import { SecurityToolService } from 'ai-kit';
+
+@Injectable()
+export class InputPipelineService {
+  constructor(private readonly securityToolService: SecurityToolService) {}
+
+  listGuardrails() {
+    return this.securityToolService.listTools();
+    // [{ id, preset, name, description }, ...]
+  }
+
+  async checkAndRedact(text: string) {
+    const guard  = this.securityToolService.getTool('injection-guard');
+    const redact = this.securityToolService.getTool('pii-cleaner');
+
+    const { verdict, matches } = JSON.parse(await guard.invoke({ text }));
+    if (verdict === 'unsafe') {
+      throw new Error(`Prompt injection détecté : ${matches.join(', ')}`);
+    }
+
+    const { redactedText } = JSON.parse(await redact.invoke({ text }));
+    return redactedText;
+  }
+}
+```
+
+### SecurityToolService
+
+| Méthode | Retour | Description |
+|---------|--------|-------------|
+| `registerTool(config)` | `StructuredTool` | Compile et enregistre un outil de sécurité. L'expose aussi dans `McpService`. |
+| `registerTools(configs)` | `void` | Enregistre plusieurs outils en lot. |
+| `getTool(id)` | `StructuredTool` | Retourne l'outil pour l'ID donné. Lève `[AiKit]` si absent. |
+| `listTools()` | `ISecurityToolDescriptor[]` | Liste tous les outils de sécurité enregistrés. |
+
+### Interfaces de sécurité
+
+```typescript
+type SecurityToolPreset = 'prompt-injection-guard' | 'pii-redactor' | 'content-policy-guard';
+
+interface ISecurityToolConfig {
+  id: string;
+  preset: SecurityToolPreset;
+  name?: string;              // Nom exposé au LLM (sinon: id)
+  description?: string;       // Description exposée au LLM (sinon: description par défaut du preset)
+
+  // Options du preset 'prompt-injection-guard'
+  promptInjection?: {
+    blockedPatterns?: string[]; // Remplace les patterns par défaut
+  };
+
+  // Options du preset 'pii-redactor'
+  piiRedactor?: {
+    replacement?: string;     // Texte de remplacement (défaut: '[REDACTED]')
+    redactEmails?: boolean;   // défaut: true
+    redactPhones?: boolean;   // défaut: true
+    redactIban?: boolean;     // défaut: true
+    redactCreditCards?: boolean; // défaut: true
+  };
+
+  // Options du preset 'content-policy-guard'
+  contentPolicy?: {
+    blockedTerms?: string[];  // Remplace les termes interdits par défaut
+  };
+}
+
+interface ISecurityToolDescriptor {
+  id: string;
+  preset: SecurityToolPreset;
+  name: string;
+  description: string;
+}
+```
+
+---
+
 ## Tokens d'injection
 
 Pour injecter les services avec `@Inject()` :
@@ -919,6 +1144,7 @@ constructor(
 | `AI_KIT_OPTIONS` | `AiKitModuleOptions` |
 | `AI_KIT_MODEL_SERVICE` | `ModelService` |
 | `AI_KIT_MCP_SERVICE` | `McpService` |
+| `AI_KIT_SECURITY_TOOL_SERVICE` | `SecurityToolService` |
 | `AI_KIT_MEMORY_SERVICE` | `MemoryService` |
 | `AI_KIT_AGENT_SERVICE` | `AgentService` |
 | `AI_KIT_AGENT_GRAPH_SERVICE` | `AgentGraphService` |
@@ -933,6 +1159,7 @@ constructor(
 | `getAgentToken(id)` | Retourne le token string pour `Agent` |
 | `getAgentGraphToken(id)` | Retourne le token string pour `AgentGraph` |
 | `getToolToken(id)` | Retourne le token string pour `StructuredTool` |
+| `getSecurityToolToken(id)` | Retourne le token string pour un outil de sécurité `StructuredTool` |
 | `getMemoryToken(id)` | Retourne le token string pour `IMemoryAdapter` |
 
 ---

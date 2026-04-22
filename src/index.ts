@@ -11,6 +11,14 @@ export type {
 } from './models/model.interface';
 
 export type { ITool, IMcpServerConfig, IMcpStdioServerConfig, IMcpSseServerConfig, IToolConfig } from './interfaces/tool.interface';
+export type {
+  SecurityToolPreset,
+  IPromptInjectionGuardOptions,
+  IPiiRedactorOptions,
+  IContentPolicyGuardOptions,
+  ISecurityToolConfig,
+  ISecurityToolDescriptor,
+} from './interfaces/security-tool.interface';
 
 export type {
   IHumanInTheLoopConfig,
@@ -19,7 +27,17 @@ export type {
   IInterruptPayload,
 } from './interfaces/hitl.interface';
 
-export type { ISubAgentSpec, ICompiledSubAgent } from './agents/sub-agent.interface';
+export type {
+  ISubAgentSpec,
+  ICompiledSubAgent,
+  ISubAgentDefinitionClass,
+  SubAgentDefinitionInput,
+} from './agents/sub-agent.interface';
+export {
+  SubAgentDefinition,
+  getSubAgentDefinitionMetadata,
+  isSubAgentDefinitionClass,
+} from './agents/sub-agent.definition';
 
 export type {
   IAgentConfig,
@@ -28,6 +46,15 @@ export type {
   IAgentMessage,
   IAgentStreamEvent,
 } from './agents/agent';
+
+export type { IAgentDefinitionClass, AgentDefinitionInput } from './agents/agent.definition';
+export {
+  AgentDefinition,
+  UsesSubAgents,
+  getAgentDefinitionMetadata,
+  isAgentDefinitionClass,
+  resolveAgentDefinitionInput,
+} from './agents/agent.definition';
 
 export type {
   IAgentGraph,
@@ -57,11 +84,13 @@ export { AgentGraphFactory } from './agents/agent-graph.factory';
 // ─── Décorateurs d'injection ──────────────────────────────────────────────────
 export { InjectAgent, InjectAgentGraph, getAgentToken, getAgentGraphToken } from './agents/agent.tokens';
 export { InjectTool, getToolToken } from './interfaces/tool.tokens';
+export { InjectSecurityTool, getSecurityToolToken } from './interfaces/security-tool.tokens';
 export { InjectMemory, getMemoryToken } from './interfaces/memory.tokens';
 
 // ─── Services (pour injection directe) ───────────────────────────────────────
 export { ModelService } from './models/model.service';
 export { McpService } from './services/mcp.service';
+export { SecurityToolService } from './security/security-tool.service';
 export { MemoryService } from './services/memory.service';
 export { HitlService } from './services/hitl.service';
 export { SubAgentService } from './agents/sub-agent.service';
@@ -76,6 +105,7 @@ export {
   AI_KIT_OPTIONS,
   AI_KIT_MODEL_SERVICE,
   AI_KIT_MCP_SERVICE,
+  AI_KIT_SECURITY_TOOL_SERVICE,
   AI_KIT_MEMORY_SERVICE,
   AI_KIT_AGENT_SERVICE,
   AI_KIT_AGENT_GRAPH_SERVICE,

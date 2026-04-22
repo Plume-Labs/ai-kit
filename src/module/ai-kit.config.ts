@@ -1,8 +1,9 @@
 import { IModelConfig } from '../models/model.interface';
 import { IMcpServerConfig, IToolConfig } from '../interfaces/tool.interface';
+import { ISecurityToolConfig } from '../interfaces/security-tool.interface';
 import { IMemoryConfig } from '../interfaces/memory.interface';
 import { IAcpServerConfig } from '../interfaces/acp.interface';
-import { IAgentConfig } from '../agents/agent';
+import { AgentDefinitionInput } from '../agents/agent.definition';
 import { IAgentGraph } from '../agents/agent-graph.interface';
 
 /**
@@ -27,6 +28,11 @@ export interface AiKitModuleOptions {
   tools?: IToolConfig[];
 
   /**
+   * Outils de sécurité prêts à l'emploi (presets) à enregistrer au démarrage.
+   */
+  securityTools?: ISecurityToolConfig[];
+
+  /**
    * Memoires personnalisees a enregistrer dans MemoryService.
    */
   memories?: IMemoryConfig[];
@@ -45,7 +51,7 @@ export interface AiKitModuleOptions {
   /**
    * Agents pré-enregistrés au démarrage du module.
    */
-  agents?: IAgentConfig[];
+  agents?: AgentDefinitionInput[];
 
   /**
    * Graphes d'agents pré-enregistrés au démarrage du module.
@@ -77,7 +83,7 @@ export interface AiKitFeatureOptions {
    * Agents à enregistrer dans AgentService au boot du feature module.
    * Fusionnés avec les agents existants (pas de remplacement).
    */
-  agents?: IAgentConfig[];
+  agents?: AgentDefinitionInput[];
 
   /**
    * Serveurs MCP à connecter et outils à exposer dans McpService.
@@ -90,6 +96,12 @@ export interface AiKitFeatureOptions {
    * Fusionnés avec les outils existants par id.
    */
   tools?: IToolConfig[];
+
+  /**
+   * Outils de sécurité (presets) à enregistrer dans SecurityToolService.
+   * Fusionnés avec les outils existants par id.
+   */
+  securityTools?: ISecurityToolConfig[];
 
   /**
    * Memoires personnalisees a enregistrer dans MemoryService.

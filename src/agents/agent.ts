@@ -1,7 +1,7 @@
 import { DeepAgent } from 'deepagents';
 import { HumanMessage } from '@langchain/core/messages';
 import { IHumanInTheLoopConfig } from '../interfaces/hitl.interface';
-import { ISubAgentSpec } from './sub-agent.interface';
+import { SubAgentDefinitionInput } from './sub-agent.interface';
 import { HitlService } from '../services/hitl.service';
 
 // ─── Interfaces publiques ─────────────────────────────────────────────────────
@@ -65,7 +65,7 @@ export interface IAgentConfig {
   /** ID de la memoire a utiliser (sinon memoire par defaut) */
   memoryId?: string;
   /** Sous-agents à déléguer */
-  subAgents?: ISubAgentSpec[];
+  subAgents?: SubAgentDefinitionInput[];
   /** Configuration HITL */
   hitl?: IHumanInTheLoopConfig;
   /** Format de réponse structurée (schema JSON) */

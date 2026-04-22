@@ -6,6 +6,7 @@ import { McpService } from './mcp.service';
 import { MemoryService } from './memory.service';
 import { AgentService } from '../agents/agent.service';
 import { AgentGraphService } from '../agents/agent-graph.service';
+import { SecurityToolService } from '../security/security-tool.service';
 
 /**
  * Service interne instancié par AiKitModule.forFeature().
@@ -26,6 +27,7 @@ export class AiKitFeatureInitializer implements OnModuleInit {
 
     private readonly modelService: ModelService,
     private readonly mcpService: McpService,
+    private readonly securityToolService: SecurityToolService,
     private readonly memoryService: MemoryService,
     private readonly agentService: AgentService,
     private readonly agentGraphService: AgentGraphService,
@@ -34,7 +36,7 @@ export class AiKitFeatureInitializer implements OnModuleInit {
   async onModuleInit(): Promise<void> {
     if (!this.featureOptions) return;
 
-    const { models, mcpServers, tools, memories, agents, graphs } = this.featureOptions;
+    const { models, mcpServers, tools, securityTools, memories, agents, graphs } = this.featureOptions;
 
     if (models?.length) {
       this.modelService.registerModels(models);
@@ -49,6 +51,11 @@ export class AiKitFeatureInitializer implements OnModuleInit {
     if (tools?.length) {
       this.mcpService.registerTools(tools);
       this.logger.log(`[AiKit/Feature] ${tools.length} outil(s) enregistré(s)`);
+    }
+
+    if (securityTools?.length) {
+      this.securityToolService.registerTools(securityTools);
+      this.logger.log(`[AiKit/Feature] ${securityTools.length} outil(s) de sécurité enregistré(s)`);
     }
 
     if (memories?.length) {
