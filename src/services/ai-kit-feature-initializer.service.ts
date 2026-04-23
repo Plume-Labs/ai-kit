@@ -19,6 +19,7 @@ import { SecurityToolService } from '../security/security-tool.service';
 @Injectable()
 export class AiKitFeatureInitializer implements OnModuleInit {
   private readonly logger = new Logger(AiKitFeatureInitializer.name);
+  private initialized = false;
 
   constructor(
     @Inject(AI_KIT_FEATURE_OPTIONS)
@@ -34,6 +35,18 @@ export class AiKitFeatureInitializer implements OnModuleInit {
   ) {}
 
   async onModuleInit(): Promise<void> {
+    await this.initialize();
+  }
+
+  /**
+   * Initialise les ressources forFeature() de façon additive et idempotente.
+   * Cette méthode peut être appelée explicitement par des providers qui ont
+   * besoin de garanties d'ordre avant résolution d'un token.
+   */
+  async initialize(): Promise<void> {
+    if (this.initialized) return;
+    this.initialized = true;
+
     if (!this.featureOptions) return;
 
     const { models, mcpServers, tools, securityTools, memories, agents, graphs } = this.featureOptions;

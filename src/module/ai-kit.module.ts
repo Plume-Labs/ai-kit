@@ -143,53 +143,77 @@ export class AiKitModule {
       useValue: options,
     };
 
-    // Un provider par agent déclaré : résout et enregistre l'Agent dans AgentService,
-    // puis le rend injectable via @InjectAgent('id').
+    // Un provider par agent déclaré : force l'initialisation additive forFeature(),
+    // puis résout l'Agent déjà enregistré dans AgentService.
     const agentProviders: FactoryProvider[] = (options.agents ?? []).map((input) => {
       const config = resolveAgentDefinitionInput(input);
       return {
         provide: getAgentToken(config.id),
-        useFactory: (agentService: AgentService) => agentService.registerAgent(config),
-        inject: [AgentService],
+        useFactory: async (
+          initializer: AiKitFeatureInitializer,
+          agentService: AgentService,
+        ) => {
+          await initializer.initialize();
+          return agentService.resolve(config.id);
+        },
+        inject: [AiKitFeatureInitializer, AgentService],
       };
     });
 
-    // Un provider par graphe déclaré : compile l'AgentGraph dans AgentGraphService,
-    // puis le rend injectable via @InjectAgentGraph('id').
+    // Un provider par graphe déclaré : force l'initialisation additive forFeature(),
+    // puis résout le graphe déjà compilé dans AgentGraphService.
     const graphProviders: FactoryProvider[] = (options.graphs ?? []).map((def) => ({
       provide: getAgentGraphToken(def.id),
-      useFactory: (graphService: AgentGraphService) => graphService.buildGraph(def),
-      inject: [AgentGraphService],
+      useFactory: async (
+        initializer: AiKitFeatureInitializer,
+        graphService: AgentGraphService,
+      ) => {
+        await initializer.initialize();
+        return graphService.resolve(def.id);
+      },
+      inject: [AiKitFeatureInitializer, AgentGraphService],
     }));
 
-    // Un provider par outil déclaré : enregistre l'outil dans McpService,
-    // puis le rend injectable via @InjectTool('id').
+    // Un provider par outil déclaré : force l'initialisation additive forFeature(),
+    // puis résout l'outil enregistré dans McpService.
     const toolProviders: FactoryProvider[] = (options.tools ?? []).map((config) => ({
       provide: getToolToken(config.id),
-      useFactory: (mcpService: McpService) => {
-        mcpService.registerTool(config.id, config.tool);
-        return config.tool;
+      useFactory: async (
+        initializer: AiKitFeatureInitializer,
+        mcpService: McpService,
+      ) => {
+        await initializer.initialize();
+        return mcpService.getTool(config.id);
       },
-      inject: [McpService],
+      inject: [AiKitFeatureInitializer, McpService],
     }));
 
-    // Un provider par outil de sécurité : le compile via SecurityToolService,
-    // puis le rend injectable via @InjectSecurityTool('id').
+    // Un provider par outil de sécurité : force l'initialisation additive forFeature(),
+    // puis résout l'outil compilé via SecurityToolService.
     const securityToolProviders: FactoryProvider[] = (options.securityTools ?? []).map((config) => ({
       provide: getSecurityToolToken(config.id),
-      useFactory: (securityToolService: SecurityToolService) => securityToolService.registerTool(config),
-      inject: [SecurityToolService],
+      useFactory: async (
+        initializer: AiKitFeatureInitializer,
+        securityToolService: SecurityToolService,
+      ) => {
+        await initializer.initialize();
+        return securityToolService.getTool(config.id);
+      },
+      inject: [AiKitFeatureInitializer, SecurityToolService],
     }));
 
-    // Un provider par memoire declaree : enregistre l'adaptateur dans MemoryService,
-    // puis le rend injectable via @InjectMemory('id').
+    // Un provider par memoire declaree : force l'initialisation additive forFeature(),
+    // puis résout l'adaptateur depuis MemoryService.
     const memoryProviders: FactoryProvider[] = (options.memories ?? []).map((config) => ({
       provide: getMemoryToken(config.id),
-      useFactory: (memoryService: MemoryService) => {
-        memoryService.registerMemory(config);
-        return config.adapter;
+      useFactory: async (
+        initializer: AiKitFeatureInitializer,
+        memoryService: MemoryService,
+      ) => {
+        await initializer.initialize();
+        return memoryService.resolve(config.id);
       },
-      inject: [MemoryService],
+      inject: [AiKitFeatureInitializer, MemoryService],
     }));
 
     const allProviders = [
