@@ -1,4 +1,4 @@
-import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { IModelConfig, IModelProvider } from './model.interface';
 import { buildChatModel } from './model.factory';
@@ -8,9 +8,12 @@ import { AI_KIT_OPTIONS } from '../module/ai-kit.tokens';
 /**
  * Service de gestion des modèles de langage.
  * Expose une interface stable — les utilisateurs ne manipulent jamais BaseChatModel directement.
+ *
+ * Bug fix: les modèles sont enregistrés dans le constructeur (et non dans onModuleInit)
+ * afin d'être disponibles dès la résolution DI, avant l'exécution des lifecycle hooks.
  */
 @Injectable()
-export class ModelService implements OnModuleInit {
+export class ModelService {
   private readonly models = new Map<string, BaseChatModel>();
   private readonly configs = new Map<string, IModelConfig>();
   private defaultModelId?: string;
@@ -18,9 +21,7 @@ export class ModelService implements OnModuleInit {
   constructor(
     @Inject(AI_KIT_OPTIONS)
     private readonly options: AiKitModuleOptions,
-  ) {}
-
-  onModuleInit(): void {
+  ) {
     this.registerModels(this.options.models ?? []);
   }
 
