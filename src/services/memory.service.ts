@@ -5,6 +5,7 @@ import {
   CheckpointerMemoryAdapter,
   IMemoryAdapter,
   IMemoryConfig,
+  ISemanticMemoryAdapter,
   InMemoryAdapter,
 } from '../interfaces/memory.interface';
 
@@ -92,6 +93,30 @@ export class MemoryService implements OnModuleInit {
 
   getCheckpointer(memoryId?: string): unknown {
     return this.resolve(memoryId).getCheckpointer();
+  }
+
+  /**
+   * Resout un adaptateur semantique par son id.
+   * Leve une erreur si l'adaptateur ne supporte pas la recherche semantique
+   * (i.e. n'implementes pas ISemanticMemoryAdapter).
+   */
+  resolveSemanticStore(memoryId?: string): ISemanticMemoryAdapter {
+    const adapter = this.resolve(memoryId);
+    if (!this.isSemanticAdapter(adapter)) {
+      const id = memoryId ?? this.defaultMemoryId;
+      throw new Error(
+        `[AiKit] L'adaptateur memoire '${id}' ne supporte pas la recherche semantique. ` +
+          'Utilisez un ISemanticMemoryAdapter (ex: PgVectorMemoryAdapter, PgFullMemoryAdapter).',
+      );
+    }
+    return adapter as ISemanticMemoryAdapter;
+  }
+
+  private isSemanticAdapter(adapter: IMemoryAdapter): boolean {
+    return (
+      typeof (adapter as any).search === 'function' &&
+      typeof (adapter as any).store === 'function'
+    );
   }
 
   listMemories(): Array<{ id: string; isDefault: boolean }> {

@@ -1,8 +1,9 @@
 import { DeepAgent } from 'deepagents';
-import { HumanMessage } from '@langchain/core/messages';
+import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { IHumanInTheLoopConfig } from '../interfaces/hitl.interface';
 import { SubAgentDefinitionInput } from './sub-agent.interface';
 import { HitlService } from '../services/hitl.service';
+import { ISemanticMemoryAdapter } from '../interfaces/memory.interface';
 
 // ─── Interfaces publiques ─────────────────────────────────────────────────────
 
@@ -72,6 +73,25 @@ export interface IAgentConfig {
   responseFormat?: Record<string, unknown>;
   /** Options supplémentaires deepagents */
   extra?: Record<string, unknown>;
+  /**
+   * Configuration de la memoire semantique long terme.
+   * Si definie, les memoires pertinentes sont recherchees avant chaque run
+   * et injectees dans le contexte de l'agent.
+   */
+  semanticMemory?: {
+    /**
+     * ID de l'adaptateur semantique dans MemoryService.
+     * Doit correspondre a un ISemanticMemoryAdapter.
+     */
+    semanticMemoryId?: string;
+    /** Nombre de memoires a recuperer (defaut : 5) */
+    topK?: number;
+    /**
+     * Si true (defaut), les memoires sont injectees comme SystemMessage
+     * dans les messages envoyes a l'agent.
+     */
+    includeInSystemPrompt?: boolean;
+  };
 }
 
 // ─── Classe Agent ─────────────────────────────────────────────────────────────
@@ -94,6 +114,7 @@ export class Agent {
 
   private readonly checkpointer: unknown;
   private readonly hitlService: HitlService;
+  private readonly semanticAdapter?: ISemanticMemoryAdapter;
 
   /** @internal Appelé uniquement par AgentFactory */
   constructor(
@@ -102,12 +123,14 @@ export class Agent {
     checkpointer: unknown,
     hitlService: HitlService,
     config: IAgentConfig,
+    semanticAdapter?: ISemanticMemoryAdapter,
   ) {
     this.id = id;
     this._internal = internal;
     this.checkpointer = checkpointer;
     this.hitlService = hitlService;
     this.config = config;
+    this.semanticAdapter = semanticAdapter;
   }
 
   /**
@@ -115,8 +138,10 @@ export class Agent {
    */
   async run(opts: IAgentRunOptions): Promise<IAgentResult> {
     const threadId = opts.threadId ?? `thread-${Date.now()}`;
-    const input =
+    const inputMessages =
       typeof opts.input === 'string' ? [new HumanMessage(opts.input)] : opts.input;
+
+    const messages = await this.prependSemanticMemories(opts.input, threadId, inputMessages);
 
     const runConfig = {
       configurable: { thread_id: threadId },
@@ -124,7 +149,7 @@ export class Agent {
     };
 
     const result = await this._internal.invoke(
-      { messages: input } as any,
+      { messages } as any,
       runConfig as any,
     );
 
@@ -150,8 +175,10 @@ export class Agent {
    */
   async *stream(opts: IAgentRunOptions): AsyncIterable<IAgentStreamEvent> {
     const threadId = opts.threadId ?? `thread-${Date.now()}`;
-    const input =
+    const inputMessages =
       typeof opts.input === 'string' ? [new HumanMessage(opts.input)] : opts.input;
+
+    const messages = await this.prependSemanticMemories(opts.input, threadId, inputMessages);
 
     const runConfig = {
       configurable: { thread_id: threadId },
@@ -160,7 +187,7 @@ export class Agent {
 
     try {
       for await (const chunk of await this._internal.stream(
-        { messages: input } as any,
+        { messages } as any,
         { ...runConfig, streamMode: 'updates' } as any,
       )) {
         yield { type: 'text', data: chunk };
@@ -204,5 +231,42 @@ export class Agent {
       output: result?.messages?.[result.messages.length - 1]?.content ?? result,
       meta: { threadId },
     };
+  }
+
+  /**
+   * Si une memoire semantique est configuree, recherche les entrees pertinentes
+   * et les prepend comme SystemMessage dans les messages envoyes a l'agent.
+   */
+  private async prependSemanticMemories(
+    input: IAgentRunOptions['input'],
+    threadId: string,
+    messages: unknown,
+  ): Promise<unknown> {
+    const semanticCfg = this.config.semanticMemory;
+    if (
+      !this.semanticAdapter ||
+      !semanticCfg ||
+      semanticCfg.includeInSystemPrompt === false ||
+      !Array.isArray(messages)
+    ) {
+      return messages;
+    }
+
+    const query = typeof input === 'string' ? input : JSON.stringify(input);
+    const memories = await this.semanticAdapter.search(query, {
+      threadId,
+      k: semanticCfg.topK ?? 5,
+    });
+
+    if (memories.length === 0) {
+      return messages;
+    }
+
+    const memoryBlock = memories.map((m) => m.content).join('\n---\n');
+    const memoryMessage = new SystemMessage(
+      `<relevant_memories>\n${memoryBlock}\n</relevant_memories>`,
+    );
+
+    return [memoryMessage, ...messages];
   }
 }
