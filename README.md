@@ -24,7 +24,7 @@
   - [AgentFactory](#agentfactory)
   - [AgentGraphFactory](#agentgraphfactory)
 - [Semantic memory](#semantic-memory)
-  - [PgVectorMemoryAdapter](#pgvectormemoryAdapter)
+  - [PgVectorMemoryAdapter](#pgvectormemoryadapter)
   - [PgFullMemoryAdapter](#pgfullmemoryadapter)
   - [MemoryScope — multi-tenant isolation](#memoryscope--multi-tenant-isolation)
   - [SemanticMemoryDefinition — class decorator](#semanticmemorydefinition--class-decorator)
@@ -961,6 +961,8 @@ export class AppModule {}
 ---
 
 
+
+## Services
 
 Core services expose stable APIs while keeping engine-specific internals hidden.
 
