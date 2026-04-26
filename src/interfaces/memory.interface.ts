@@ -28,10 +28,43 @@ export interface ConsolidatedMemoryEntry {
   content: string;
   /** Vecteur d'embedding (généré automatiquement si absent) */
   embedding?: number[];
+  /**
+   * Scope d'isolation appliqué à cette entrée.
+   * Fusion du scope de l'appel et du `defaultScope` de l'adaptateur.
+   */
+  scope?: MemoryScope;
   /** Métadonnées supplémentaires */
   metadata?: Record<string, unknown>;
   /** Date de création */
   createdAt?: Date;
+}
+
+/**
+ * Scope d'isolation mémoire — dimensions de partitionnement logique.
+ *
+ * Chaque clé représente une dimension d'isolation indépendante.
+ * Les valeurs sont des chaînes pour rester indexables en JSONB (GIN).
+ *
+ * Exemple (architecture CQRS multi-tenant) :
+ * ```ts
+ * // Adapter isolé au domaine 'billing' de l'entreprise 'ent-1'
+ * new PgVectorMemoryAdapter(ds, embeddings, {
+ *   defaultScope: { domain: 'billing', enterpriseId: 'ent-1' },
+ * });
+ *
+ * // Recherche affinée par projet — le domain/enterpriseId sont toujours appliqués
+ * adapter.search('question', { scope: { projectId: 'proj-42' } });
+ * ```
+ */
+export interface MemoryScope {
+  /** Domaine fonctionnel (ex: 'billing', 'chat', 'onboarding') */
+  domain?: string;
+  /** Identifiant d'entreprise ou d'organisation */
+  enterpriseId?: string;
+  /** Identifiant de projet */
+  projectId?: string;
+  /** Dimensions supplémentaires arbitraires */
+  [key: string]: string | undefined;
 }
 
 /**
@@ -42,8 +75,15 @@ export interface ISemanticSearchOptions {
   threadId?: string;
   /** Filtrer par userId */
   userId?: string;
-  /** Nombre de résultats a retourner (défaut : 5) */
+  /** Nombre de résultats à retourner (défaut : 5) */
   k?: number;
+  /**
+   * Filtrer par scope d'isolation.
+   * Fusionné avec le `defaultScope` de l'adaptateur (le defaultScope prend la priorité).
+   * Permet d'ajouter des restrictions supplémentaires à la recherche
+   * (ex : limiter à un projet spécifique dans un domaine déjà isolé).
+   */
+  scope?: MemoryScope;
 }
 
 /**

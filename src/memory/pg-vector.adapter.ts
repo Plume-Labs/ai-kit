@@ -3,6 +3,7 @@ import {
   ConsolidatedMemoryEntry,
   ISemanticMemoryAdapter,
   ISemanticSearchOptions,
+  MemoryScope,
 } from '../interfaces/memory.interface';
 
 /**
@@ -27,33 +28,59 @@ export interface IPgVectorMemoryOptions {
   tableName?: string;
   /** Dimension des vecteurs d'embedding (défaut : 1536 pour text-embedding-3-small) */
   dimensions?: number;
+  /**
+   * Scope par défaut appliqué à TOUTES les opérations `store` et `search`.
+   *
+   * Ce scope est fusionné avec celui passé à chaque appel ; en cas de conflit,
+   * le `defaultScope` **prend la priorité** (sécurité : le code appelant ne peut
+   * pas sortir des frontières imposées par l'adaptateur).
+   *
+   * Recommandation : instancier un adaptateur par domaine/entreprise pour
+   * garantir l'isolation mémoire dans une architecture CQRS multi-tenant.
+   *
+   * ```ts
+   * // Adapter isolé au domaine 'billing' de l'entreprise 'ent-1'
+   * new PgVectorMemoryAdapter(ds, embeddings, {
+   *   defaultScope: { domain: 'billing', enterpriseId: 'ent-1' },
+   * });
+   * ```
+   */
+  defaultScope?: MemoryScope;
 }
 
 /**
- * Adaptateur de mémoire long terme base sur pgvector + TypeORM.
+ * Adaptateur de mémoire long terme basé sur pgvector + TypeORM.
  *
  * Stocke des entrées de mémoire consolidées (texte + embedding) dans une table
  * PostgreSQL avec l'extension pgvector, et permet la recherche par similarité
  * cosinus.
  *
+ * **Isolation mémoire** : chaque entrée porte un `scope` JSONB indexé par GIN,
+ * permettant de partitionner la mémoire par domaine, entreprise, projet, etc.
+ * Le `defaultScope` de l'adaptateur est appliqué automatiquement à chaque
+ * opération, garantissant l'isolation même si le code appelant omet le scope.
+ *
  * Requiert :
  * - L'extension pgvector activée sur votre base PostgreSQL.
- * - Un `DataSource` TypeORM connecté a cette base.
- * - Une implementation de `EmbeddingsInterface` pour vectoriser les requêtes.
+ * - Un `DataSource` TypeORM connecté à cette base.
+ * - Une implémentation de `EmbeddingsInterface` pour vectoriser les requêtes.
  *
  * Usage :
  * ```ts
- * const adapter = new PgVectorMemoryAdapter(dataSource, openAIEmbeddings);
+ * const adapter = new PgVectorMemoryAdapter(dataSource, openAIEmbeddings, {
+ *   defaultScope: { domain: 'billing', enterpriseId: 'ent-1' },
+ * });
  * await adapter.initialize();
  *
  * AiKitModule.forRoot({
- *   memories: [{ id: 'pgvec', adapter, type: 'semantic' }],
+ *   memories: [{ id: 'billing-mem', adapter, type: 'semantic' }],
  * });
  * ```
  */
 export class PgVectorMemoryAdapter implements ISemanticMemoryAdapter {
   private readonly tableName: string;
   private readonly dimensions: number;
+  private readonly defaultScope: MemoryScope;
 
   constructor(
     private readonly dataSource: IDataSource,
@@ -62,11 +89,14 @@ export class PgVectorMemoryAdapter implements ISemanticMemoryAdapter {
   ) {
     this.tableName = options.tableName ?? 'ai_kit_memories';
     this.dimensions = options.dimensions ?? 1536;
+    this.defaultScope = options.defaultScope ?? {};
   }
 
   /**
-   * Crée l'extension pgvector et la table de mémoire si elles n'existent pas.
-   * A appeler une fois au démarrage (ex: dans onModuleInit du module consommateur).
+   * Crée l'extension pgvector et la table de mémoire si elles n'existent pas,
+   * et applique les migrations de schéma nécessaires (colonne `scope`).
+   *
+   * À appeler une fois au démarrage (ex: dans `onModuleInit` du module consommateur).
    */
   async initialize(): Promise<void> {
     if (!this.dataSource.isInitialized) {
@@ -80,13 +110,30 @@ export class PgVectorMemoryAdapter implements ISemanticMemoryAdapter {
         user_id     TEXT,
         content     TEXT NOT NULL,
         embedding   vector(${this.dimensions}),
-        metadata    JSONB DEFAULT '{}',
+        metadata    JSONB NOT NULL DEFAULT '{}',
+        scope       JSONB NOT NULL DEFAULT '{}',
         created_at  TIMESTAMPTZ DEFAULT NOW()
       )
     `);
+    // Migration : ajoute la colonne scope sur les tables existantes (sans scope)
+    await this.dataSource.query(`
+      ALTER TABLE ${this.tableName}
+        ADD COLUMN IF NOT EXISTS scope JSONB NOT NULL DEFAULT '{}'
+    `);
+    // Index ivfflat pour la recherche par similarité cosinus
     await this.dataSource.query(`
       CREATE INDEX IF NOT EXISTS ${this.tableName}_embedding_idx
       ON ${this.tableName} USING ivfflat (embedding vector_cosine_ops)
+    `);
+    // Index GIN sur scope pour le filtrage par isolation (JSONB @> containment)
+    await this.dataSource.query(`
+      CREATE INDEX IF NOT EXISTS ${this.tableName}_scope_idx
+      ON ${this.tableName} USING gin (scope)
+    `);
+    // Index B-tree sur thread_id pour les filtres par thread
+    await this.dataSource.query(`
+      CREATE INDEX IF NOT EXISTS ${this.tableName}_thread_id_idx
+      ON ${this.tableName} (thread_id)
     `);
   }
 
@@ -100,6 +147,7 @@ export class PgVectorMemoryAdapter implements ISemanticMemoryAdapter {
   /**
    * Stocke une entrée de mémoire.
    * Génère l'embedding via le modèle configuré si absent.
+   * Le scope effectif est la fusion de `entry.scope` et du `defaultScope` de l'adaptateur.
    */
   async store(entry: ConsolidatedMemoryEntry): Promise<ConsolidatedMemoryEntry> {
     let embedding = entry.embedding;
@@ -107,16 +155,19 @@ export class PgVectorMemoryAdapter implements ISemanticMemoryAdapter {
       embedding = await this.embeddings.embedQuery(entry.content);
     }
 
+    const effectiveScope = this.buildEffectiveScope(entry.scope);
+
     const rows = await this.dataSource.query(
-      `INSERT INTO ${this.tableName} (thread_id, user_id, content, embedding, metadata)
-       VALUES ($1, $2, $3, $4::vector, $5)
-       RETURNING id, thread_id, user_id, content, metadata, created_at`,
+      `INSERT INTO ${this.tableName} (thread_id, user_id, content, embedding, metadata, scope)
+       VALUES ($1, $2, $3, $4::vector, $5, $6)
+       RETURNING id, thread_id, user_id, content, metadata, scope, created_at`,
       [
         entry.threadId ?? null,
         entry.userId ?? null,
         entry.content,
         JSON.stringify(embedding),
         JSON.stringify(entry.metadata ?? {}),
+        JSON.stringify(effectiveScope),
       ],
     );
 
@@ -125,7 +176,11 @@ export class PgVectorMemoryAdapter implements ISemanticMemoryAdapter {
 
   /**
    * Recherche les entrées les plus proches par similarité cosinus.
-   * @param query Texte (vectorise automatiquement) ou vecteur pré-calculé.
+   *
+   * Le scope de recherche est la fusion de `options.scope` et du `defaultScope`
+   * de l'adaptateur (le defaultScope prend la priorité — isolation garantie).
+   *
+   * @param query Texte (vectorisé automatiquement) ou vecteur pré-calculé.
    */
   async search(
     query: string | number[],
@@ -148,10 +203,16 @@ export class PgVectorMemoryAdapter implements ISemanticMemoryAdapter {
       params.push(options.userId);
     }
 
+    const effectiveScope = this.buildEffectiveScope(options.scope);
+    if (Object.keys(effectiveScope).length > 0) {
+      conditions.push(`scope @> $${paramIdx++}::jsonb`);
+      params.push(JSON.stringify(effectiveScope));
+    }
+
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const rows = await this.dataSource.query(
-      `SELECT id, thread_id, user_id, content, metadata, created_at
+      `SELECT id, thread_id, user_id, content, metadata, scope, created_at
        FROM ${this.tableName}
        ${where}
        ORDER BY embedding <=> $1::vector
@@ -162,12 +223,40 @@ export class PgVectorMemoryAdapter implements ISemanticMemoryAdapter {
     return rows.map((row: any) => this.rowToEntry(row));
   }
 
+  // ─── Helpers privés ──────────────────────────────────────────────────────────
+
+  /**
+   * Fusionne le scope d'appel avec le defaultScope de l'adaptateur.
+   * Le defaultScope prend la priorité sur le scope d'appel pour les clés en conflit,
+   * garantissant que le code appelant ne peut pas sortir des frontières imposées.
+   */
+  private buildEffectiveScope(callScope?: MemoryScope): Record<string, string> {
+    const result: Record<string, string> = {};
+    // Scope d'appel en premier (priorité basse)
+    if (callScope) {
+      for (const [key, value] of Object.entries(callScope)) {
+        if (value !== undefined) {
+          result[key] = value;
+        }
+      }
+    }
+    // defaultScope en dernier (priorité haute — sécurité)
+    for (const [key, value] of Object.entries(this.defaultScope)) {
+      if (value !== undefined) {
+        result[key] = value;
+      }
+    }
+    return result;
+  }
+
   private rowToEntry(row: any): ConsolidatedMemoryEntry {
+    const scope = row.scope as Record<string, string> | undefined;
     return {
       id: row.id,
       threadId: row.thread_id ?? undefined,
       userId: row.user_id ?? undefined,
       content: row.content,
+      scope: scope && Object.keys(scope).length > 0 ? scope : undefined,
       metadata: row.metadata ?? undefined,
       createdAt: row.created_at ? new Date(row.created_at) : undefined,
     };

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { BaseMessage } from '@langchain/core/messages';
-import { ConsolidatedMemoryEntry } from '../interfaces/memory.interface';
+import { ConsolidatedMemoryEntry, MemoryScope } from '../interfaces/memory.interface';
 import { ISemanticMemoryAdapter } from '../interfaces/memory.interface';
 import { MemoryService } from './memory.service';
 import { ModelService } from '../models/model.service';
@@ -39,9 +39,25 @@ export interface IConsolidationOptions {
   modelId?: string;
 
   /**
-   * Métadonnées supplémentaires a stocker avec l'entrée.
+   * Métadonnées supplémentaires à stocker avec l'entrée.
    */
   metadata?: Record<string, unknown>;
+
+  /**
+   * Scope d'isolation à appliquer à l'entrée consolidée.
+   * Fusionné avec le `defaultScope` de l'adaptateur sémantique cible.
+   *
+   * Exemple (Neura / CQRS) :
+   * ```ts
+   * await consolidationService.consolidate({
+   *   messages: result.messages ?? [],
+   *   threadId: 't1',
+   *   scope: { domain: 'billing', projectId: 'proj-42' },
+   *   semanticMemoryId: 'pgvec',
+   * });
+   * ```
+   */
+  scope?: MemoryScope;
 }
 
 /**
@@ -89,6 +105,7 @@ export class MemoryConsolidationService {
       threadId: opts.threadId,
       userId: opts.userId,
       content: summary,
+      scope: opts.scope,
       metadata: {
         ...(opts.metadata ?? {}),
         consolidatedAt: new Date().toISOString(),

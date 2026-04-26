@@ -10,7 +10,10 @@ const { MemoryService } = require("../dist/services/memory.service.js");
 
 // ─── Mocks ───────────────────────────────────────────────────────────────────
 
-/** DataSource mock : stocké les lignes en mémoire */
+/**
+ * DataSource mock : stocke les lignes en mémoire.
+ * Supporte un filtre de scope JSONB basique pour les tests d'isolation.
+ */
 function makeMockDataSource() {
   const rows = [];
   let idCounter = 1;
@@ -21,7 +24,7 @@ function makeMockDataSource() {
     async query(sql, params = []) {
       const s = sql.trim().toUpperCase();
 
-      if (s.startsWith("CREATE")) return [];
+      if (s.startsWith("CREATE") || s.startsWith("ALTER")) return [];
 
       if (s.startsWith("INSERT")) {
         const row = {
@@ -30,6 +33,7 @@ function makeMockDataSource() {
           user_id: params[1] ?? null,
           content: params[2],
           metadata: typeof params[4] === "string" ? JSON.parse(params[4]) : {},
+          scope: typeof params[5] === "string" ? JSON.parse(params[5]) : {},
           created_at: new Date().toISOString(),
         };
         rows.push({ ...row, embedding: params[3] });
@@ -37,14 +41,39 @@ function makeMockDataSource() {
       }
 
       if (s.startsWith("SELECT")) {
-        return rows.map((r) => ({
-          id: r.id,
-          thread_id: r.thread_id,
-          user_id: r.user_id,
-          content: r.content,
-          metadata: r.metadata,
-          created_at: r.created_at,
-        }));
+        // Simulation simplifiée du filtre scope @> $N::jsonb
+        // On extrait le scope filter depuis params (dernier param JSON si présent)
+        let scopeFilter = null;
+        for (const p of params) {
+          if (typeof p === "string") {
+            try {
+              const parsed = JSON.parse(p);
+              if (typeof parsed === "object" && !Array.isArray(parsed) && parsed !== null) {
+                // Heuristique : si ça n'est pas le vecteur (tableau) ni un nombre
+                scopeFilter = parsed;
+              }
+            } catch {}
+          }
+        }
+
+        return rows
+          .filter((r) => {
+            if (!scopeFilter || Object.keys(scopeFilter).length === 0) return true;
+            // Vérifie la containance @>
+            for (const [k, v] of Object.entries(scopeFilter)) {
+              if (r.scope[k] !== v) return false;
+            }
+            return true;
+          })
+          .map((r) => ({
+            id: r.id,
+            thread_id: r.thread_id,
+            user_id: r.user_id,
+            content: r.content,
+            metadata: r.metadata,
+            scope: r.scope,
+            created_at: r.created_at,
+          }));
       }
 
       return [];
@@ -81,14 +110,14 @@ test("PgVectorMemoryAdapter.store() persists an entry and returns it", async () 
   await adapter.initialize();
 
   const entry = await adapter.store({
-    content: "L'utilisateur prefere les reponses courtes.",
+    content: "L'utilisateur préfère les réponses courtes.",
     threadId: "t1",
     userId: "user-42",
     metadata: { source: "test" },
   });
 
   assert.ok(entry.id);
-  assert.equal(entry.content, "L'utilisateur prefere les reponses courtes.");
+  assert.equal(entry.content, "L'utilisateur préfère les réponses courtes.");
   assert.equal(entry.threadId, "t1");
   assert.equal(entry.userId, "user-42");
   assert.ok(entry.createdAt instanceof Date);
@@ -167,6 +196,112 @@ test("PgVectorMemoryAdapter.search() accepts a pre-computed vector", async () =>
   assert.equal(results.length, 1);
 });
 
+// ─── Tests d'isolation par scope ─────────────────────────────────────────────
+
+test("PgVectorMemoryAdapter.store() persists scope on entry", async () => {
+  const ds = makeMockDataSource();
+  const adapter = new PgVectorMemoryAdapter(ds, makeMockEmbeddings());
+  await adapter.initialize();
+
+  const entry = await adapter.store({
+    content: "Fait domaine billing.",
+    scope: { domain: "billing", enterpriseId: "ent-1" },
+  });
+
+  assert.deepEqual(entry.scope, { domain: "billing", enterpriseId: "ent-1" });
+});
+
+test("PgVectorMemoryAdapter defaultScope is applied to store()", async () => {
+  const ds = makeMockDataSource();
+  const adapter = new PgVectorMemoryAdapter(ds, makeMockEmbeddings(), {
+    defaultScope: { domain: "billing", enterpriseId: "ent-1" },
+  });
+  await adapter.initialize();
+
+  // On ne passe pas de scope dans l'appel
+  const entry = await adapter.store({ content: "Fact without explicit scope" });
+
+  // Le defaultScope doit être appliqué automatiquement
+  assert.equal(entry.scope?.domain, "billing");
+  assert.equal(entry.scope?.enterpriseId, "ent-1");
+});
+
+test("PgVectorMemoryAdapter defaultScope takes priority over call scope", async () => {
+  const ds = makeMockDataSource();
+  const adapter = new PgVectorMemoryAdapter(ds, makeMockEmbeddings(), {
+    defaultScope: { domain: "billing" },
+  });
+  await adapter.initialize();
+
+  // L'appelant tente de changer le domaine — le defaultScope doit gagner
+  const entry = await adapter.store({
+    content: "Tentative d'échappement de scope.",
+    scope: { domain: "other-domain", projectId: "proj-1" },
+  });
+
+  assert.equal(entry.scope?.domain, "billing", "defaultScope must override call scope");
+  assert.equal(entry.scope?.projectId, "proj-1", "extra call scope keys are preserved");
+});
+
+test("PgVectorMemoryAdapter.search() filters by scope", async () => {
+  const ds = makeMockDataSource();
+  const adapter = new PgVectorMemoryAdapter(ds, makeMockEmbeddings());
+  await adapter.initialize();
+
+  await adapter.store({ content: "Billing memory", scope: { domain: "billing" } });
+  await adapter.store({ content: "Chat memory", scope: { domain: "chat" } });
+  await adapter.store({ content: "No-scope memory" });
+
+  // Recherche uniquement dans le domaine billing
+  const results = await adapter.search("query", { scope: { domain: "billing" } });
+  assert.equal(results.length, 1);
+  assert.equal(results[0].content, "Billing memory");
+});
+
+test("PgVectorMemoryAdapter defaultScope isolates search automatically", async () => {
+  const ds = makeMockDataSource();
+
+  // Deux adaptateurs avec des defaultScope différents sur le même DataSource
+  const billingAdapter = new PgVectorMemoryAdapter(ds, makeMockEmbeddings(), {
+    defaultScope: { domain: "billing" },
+  });
+  const chatAdapter = new PgVectorMemoryAdapter(ds, makeMockEmbeddings(), {
+    defaultScope: { domain: "chat" },
+  });
+  await billingAdapter.initialize();
+
+  await billingAdapter.store({ content: "Billing fact 1" });
+  await billingAdapter.store({ content: "Billing fact 2" });
+  await chatAdapter.store({ content: "Chat fact 1" });
+
+  // Chaque adaptateur ne voit que ses propres mémoires
+  const billingResults = await billingAdapter.search("query");
+  const chatResults = await chatAdapter.search("query");
+
+  assert.equal(billingResults.length, 2, "billing adapter should see 2 entries");
+  assert.equal(chatResults.length, 1, "chat adapter should see 1 entry");
+  assert.ok(billingResults.every((r) => r.scope?.domain === "billing"));
+  assert.ok(chatResults.every((r) => r.scope?.domain === "chat"));
+});
+
+test("PgVectorMemoryAdapter caller cannot escape defaultScope in search", async () => {
+  const ds = makeMockDataSource();
+  const adapter = new PgVectorMemoryAdapter(ds, makeMockEmbeddings(), {
+    defaultScope: { domain: "billing" },
+  });
+  await adapter.initialize();
+
+  await adapter.store({ content: "Billing fact" });
+  // On stocke manuellement une entrée dans un autre domaine via un adapter sans scope
+  const openAdapter = new PgVectorMemoryAdapter(ds, makeMockEmbeddings());
+  await openAdapter.store({ content: "Other domain fact", scope: { domain: "chat" } });
+
+  // L'adaptateur billing ne doit pas voir les entrées d'un autre domaine
+  const results = await adapter.search("query", { scope: { domain: "chat" } });
+  assert.equal(results.length, 1);
+  assert.equal(results[0].scope?.domain, "billing", "defaultScope must override caller's scope");
+});
+
 // ─── Tests MemoryService.resolveSemanticStore() ───────────────────────────────
 
 test("MemoryService.resolveSemanticStore() returns adapter when semantic", () => {
@@ -242,3 +377,37 @@ test("MemoryConsolidationService.consolidate() stores a summary in semantic adap
   assert.ok(entry.metadata?.consolidatedAt);
   assert.equal(entry.metadata?.messageCount, 2);
 });
+
+test("MemoryConsolidationService.consolidate() stores scope on consolidated entry", async () => {
+  const ds = makeMockDataSource();
+  const vectorAdapter = new PgVectorMemoryAdapter(ds, makeMockEmbeddings());
+  await vectorAdapter.initialize();
+
+  const memorySvc = new MemoryService({
+    memories: [{ id: "pgvec", adapter: vectorAdapter, type: "semantic", isDefault: true }],
+  });
+  memorySvc.onModuleInit();
+
+  const modelSvc = {
+    _getInternalModel() {
+      return {
+        async invoke(messages) {
+          return { content: "Résumé de la conversation." };
+        },
+      };
+    },
+  };
+
+  const consolidationSvc = new MemoryConsolidationService(memorySvc, modelSvc);
+
+  const entry = await consolidationSvc.consolidate({
+    messages: [{ role: "human", content: "Hello" }],
+    threadId: "t2",
+    scope: { domain: "billing", projectId: "proj-99" },
+    semanticMemoryId: "pgvec",
+  });
+
+  assert.equal(entry.scope?.domain, "billing");
+  assert.equal(entry.scope?.projectId, "proj-99");
+});
+

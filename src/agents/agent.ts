@@ -3,7 +3,7 @@ import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { IHumanInTheLoopConfig } from '../interfaces/hitl.interface';
 import { SubAgentDefinitionInput } from './sub-agent.interface';
 import { HitlService } from '../services/hitl.service';
-import { ISemanticMemoryAdapter } from '../interfaces/memory.interface';
+import { ISemanticMemoryAdapter, MemoryScope } from '../interfaces/memory.interface';
 
 // ─── Interfaces publiques ─────────────────────────────────────────────────────
 
@@ -81,16 +81,24 @@ export interface IAgentConfig {
   semanticMemory?: {
     /**
      * ID de l'adaptateur sémantique dans MemoryService.
-     * Doit correspondre a un ISemanticMemoryAdapter.
+     * Doit correspondre à un ISemanticMemoryAdapter.
      */
     semanticMemoryId?: string;
-    /** Nombre de mémoires a récupérer (défaut : 5) */
+    /** Nombre de mémoires à récupérer (défaut : 5) */
     topK?: number;
     /**
      * Si true (défaut), les mémoires sont injectées comme SystemMessage
-     * dans les messages envoyés a l'agent.
+     * dans les messages envoyés à l'agent.
      */
     includeInSystemPrompt?: boolean;
+    /**
+     * Scope d'isolation à appliquer lors de la recherche de mémoires.
+     * Fusionné avec le `defaultScope` de l'adaptateur (le defaultScope prend la priorité).
+     *
+     * Permet d'affiner la recherche au-delà du scope par défaut de l'adaptateur,
+     * par exemple pour cibler un projet ou un contexte spécifique.
+     */
+    scope?: MemoryScope;
   };
 }
 
@@ -256,6 +264,7 @@ export class Agent {
     const memories = await this.semanticAdapter.search(query, {
       threadId,
       k: semanticCfg.topK ?? 5,
+      scope: semanticCfg.scope,
     });
 
     if (memories.length === 0) {

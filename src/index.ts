@@ -71,7 +71,7 @@ export type {
   IAcpAuthMethodEnvVar,
 } from './interfaces/acp.interface';
 
-export type { IMemoryAdapter, IMemoryConfig, ISemanticMemoryAdapter, ICompositeMemoryAdapter, ConsolidatedMemoryEntry, ISemanticSearchOptions } from './interfaces/memory.interface';
+export type { IMemoryAdapter, IMemoryConfig, ISemanticMemoryAdapter, ICompositeMemoryAdapter, ConsolidatedMemoryEntry, ISemanticSearchOptions, MemoryScope } from './interfaces/memory.interface';
 
 // ─── Objets domaine ───────────────────────────────────────────────────────────
 export { Agent } from './agents/agent';
