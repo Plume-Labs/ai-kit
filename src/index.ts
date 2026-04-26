@@ -125,3 +125,7 @@ export { PgFullMemoryAdapter } from './memory/pg-full.adapter';
 export type { IPgFullMemoryOptions } from './memory/pg-full.adapter';
 export { MemoryConsolidationService } from './services/memory-consolidation.service';
 export type { IConsolidationOptions } from './services/memory-consolidation.service';
+export { SemanticMemoryDefinition, getSemanticMemoryDefinitionMetadata, isSemanticMemoryDefinitionClass, resolveSemanticMemoryDefinitionInput } from './memory/semantic-memory.definition';
+export type { ISemanticMemoryDefinitionConfig, ISemanticMemoryDefinitionClass, SemanticMemoryDefinitionInput } from './memory/semantic-memory.definition';
+export { SemanticMemoryFactory } from './memory/semantic-memory.factory';
+export type { ISemanticMemoryRuntimeDeps } from './memory/semantic-memory.factory';
