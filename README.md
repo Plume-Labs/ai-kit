@@ -23,6 +23,14 @@
 - [Factories](#factories)
   - [AgentFactory](#agentfactory)
   - [AgentGraphFactory](#agentgraphfactory)
+- [Semantic memory](#semantic-memory)
+  - [PgVectorMemoryAdapter](#pgvectormemoryAdapter)
+  - [PgFullMemoryAdapter](#pgfullmemoryadapter)
+  - [MemoryScope — multi-tenant isolation](#memoryscope--multi-tenant-isolation)
+  - [SemanticMemoryDefinition — class decorator](#semanticmemorydefinition--class-decorator)
+  - [SemanticMemoryFactory](#semanticmemoryfactory)
+  - [MemoryConsolidationService](#memoryconsolidationservice)
+- [Multi-domain / CQRS architecture](#multi-domain--cqrs-architecture)
 - [Services](#services)
 - [Interfaces](#interfaces)
 - [LLM security tools](#llm-security-tools)
@@ -286,13 +294,16 @@ Besides plain object configs, `ai-kit` supports class-based definitions:
 - `@SubAgentDefinition(...)`
 - `@AgentDefinition(...)`
 - `@UsesSubAgents(...)`
+- `@SemanticMemoryDefinition(...)` — see [Semantic memory](#semantic-memory)
 - `resolveAgentDefinitionInput(...)`
+- `resolveSemanticMemoryDefinitionInput(...)`
 
 ```typescript
 import {
   AgentDefinition,
   UsesSubAgents,
   SubAgentDefinition,
+  SemanticMemoryDefinition,
   AiKitModule,
 } from 'ai-kit';
 
@@ -310,6 +321,13 @@ class BillingSubAgent {}
 })
 @UsesSubAgents([BillingSubAgent])
 class SupportAgent {}
+
+// Semantic memory: one class per domain, locked scope
+@SemanticMemoryDefinition({
+  id: 'billing-memory',
+  defaultScope: { domain: 'billing', enterpriseId: 'ent-1' },
+})
+class BillingMemory {}
 
 AiKitModule.forFeature({
   agents: [SupportAgent],
@@ -553,7 +571,396 @@ const graph = await factory.create({
 
 ---
 
-## Services
+## Semantic memory
+
+`ai-kit` provides a two-tier memory system:
+
+| Tier | Interface | Role |
+|------|-----------|------|
+| Short-term (checkpointer) | `IMemoryAdapter` | LangGraph conversation state — persisted per `threadId` |
+| Long-term (semantic) | `ISemanticMemoryAdapter` | pgvector cosine similarity — retrieved before each run |
+
+---
+
+### PgVectorMemoryAdapter
+
+Stores and searches conversation memories using [pgvector](https://github.com/pgvector/pgvector). Requires PostgreSQL with `pgvector` extension and a LangChain `EmbeddingsInterface`.
+
+The adapter uses a **duck-typed `IDataSource`** so TypeORM is a consumer-side dependency (not required by `ai-kit` itself).
+
+```typescript
+import { PgVectorMemoryAdapter } from 'ai-kit';
+import { OpenAIEmbeddings } from '@langchain/openai';
+
+const adapter = new PgVectorMemoryAdapter(dataSource, new OpenAIEmbeddings(), {
+  tableName: 'ai_memories',     // default: 'ai_kit_memories'
+  dimensions: 1536,             // default: 1536 (text-embedding-3-small)
+  defaultScope: { domain: 'billing', enterpriseId: 'ent-1' },
+});
+
+await adapter.initialize();   // creates extension + table + indexes (idempotent)
+
+// Store a consolidated memory
+await adapter.store({
+  threadId: 'thread-1',
+  userId: 'user-42',
+  content: 'User prefers monthly invoices.',
+  embedding: await embeddings.embedQuery('User prefers monthly invoices.'),
+  scope: { domain: 'billing' },
+});
+
+// Similarity search
+const results = await adapter.search('invoice preferences', {
+  topK: 5,
+  scope: { projectId: 'proj-7' },
+});
+```
+
+| Constructor option | Type | Default | Description |
+|---|---|---|---|
+| `tableName` | `string` | `'ai_kit_memories'` | PostgreSQL table name. |
+| `dimensions` | `number` | `1536` | Embedding vector size. |
+| `defaultScope` | `MemoryScope` | `{}` | Locked scope merged over every call's scope. |
+
+**Database indexes created by `initialize()`:**
+- `CREATE EXTENSION IF NOT EXISTS vector`
+- B-tree index on `thread_id`
+- GIN index on `scope` (efficient `@>` JSONB containment filtering)
+
+---
+
+### PgFullMemoryAdapter
+
+Composite adapter combining `PostgresCheckpointerAdapter` (LangGraph short-term memory) and `PgVectorMemoryAdapter` (long-term semantic memory) in one object.
+
+```typescript
+import { PgFullMemoryAdapter } from 'ai-kit';
+import { OpenAIEmbeddings } from '@langchain/openai';
+
+const adapter = await PgFullMemoryAdapter.create(dataSource, new OpenAIEmbeddings(), {
+  connectionString: process.env.DATABASE_URL,
+  tableName: 'ai_memories',
+  defaultScope: { domain: 'billing' },
+});
+```
+
+> Requires `@langchain/langgraph-checkpoint-postgres` as a peer dependency (loaded dynamically).
+
+---
+
+### MemoryScope — multi-tenant isolation
+
+`MemoryScope` is a flexible JSONB key-value map that partitions memories by any dimension.
+
+```typescript
+interface MemoryScope {
+  domain?: string;         // CQRS bounded context (e.g. 'billing', 'support')
+  enterpriseId?: string;   // tenant isolation
+  projectId?: string;      // project-level isolation
+  [key: string]: string | undefined;  // any arbitrary dimension
+}
+```
+
+The `defaultScope` on a `PgVectorMemoryAdapter` is **merged over** the caller's scope on every `store()` and `search()` call — the adapter's keys always win. This creates a hard security boundary: one adapter per domain/tenant means cross-domain leakage is architecturally impossible.
+
+```typescript
+const billingAdapter = new PgVectorMemoryAdapter(ds, embeddings, {
+  defaultScope: { domain: 'billing', enterpriseId: 'ent-1' },
+});
+
+// Caller narrows the scope with projectId — but domain + enterpriseId are locked
+await billingAdapter.search('query', { scope: { projectId: 'proj-42' } });
+// → effective scope: { domain: 'billing', enterpriseId: 'ent-1', projectId: 'proj-42' }
+```
+
+---
+
+### SemanticMemoryDefinition — class decorator
+
+Mirrors `@AgentDefinition`: declares a named memory store as a class so it can be referenced by type across bounded context modules.
+
+```typescript
+import { SemanticMemoryDefinition } from 'ai-kit';
+
+@SemanticMemoryDefinition({
+  id: 'billing-memory',
+  tableName: 'ai_memories_billing',
+  defaultScope: { domain: 'billing', enterpriseId: 'ent-1' },
+  isDefault: false,
+})
+export class BillingMemory {}
+```
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `id` | `string` | Memory id registered in `MemoryService`. |
+| `tableName` | `string` | Optional PostgreSQL table name. |
+| `dimensions` | `number` | Optional embedding vector size. |
+| `defaultScope` | `MemoryScope` | Locked scope enforced on every operation. |
+| `isDefault` | `boolean` | Set as default memory after registration. |
+
+---
+
+### SemanticMemoryFactory
+
+Globally injectable service that creates and registers `PgVectorMemoryAdapter` instances from decorated classes or raw configs.
+
+```typescript
+import { Injectable, OnModuleInit } from '@nestjs/common';
+import { SemanticMemoryFactory } from 'ai-kit';
+import { DataSource } from 'typeorm';
+import { OpenAIEmbeddings } from '@langchain/openai';
+
+@Injectable()
+export class BillingInit implements OnModuleInit {
+  constructor(
+    private readonly semanticMemoryFactory: SemanticMemoryFactory,
+    private readonly dataSource: DataSource,
+    private readonly embeddings: OpenAIEmbeddings,
+  ) {}
+
+  async onModuleInit() {
+    // Creates schema + indexes (idempotent) and registers with MemoryService
+    await this.semanticMemoryFactory.createAndRegister(BillingMemory, {
+      dataSource: this.dataSource,
+      embeddings: this.embeddings,
+    });
+  }
+}
+```
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `create(definition, deps)` | `Promise<PgVectorMemoryAdapter>` | Builds and initializes an adapter without registering it. |
+| `createAndRegister(definition, deps)` | `Promise<PgVectorMemoryAdapter>` | Builds, initializes, and registers with `MemoryService`. |
+
+Both methods accept a `@SemanticMemoryDefinition`-decorated class or a raw `ISemanticMemoryDefinitionConfig` object.
+
+---
+
+### MemoryConsolidationService
+
+After each agent run, consolidates the conversation into long-term semantic memory by summarizing messages with the LLM and storing the result via `PgVectorMemoryAdapter`.
+
+```typescript
+import { Injectable } from '@nestjs/common';
+import { AgentService, MemoryConsolidationService } from 'ai-kit';
+
+@Injectable()
+export class ChatService {
+  constructor(
+    private readonly agentService: AgentService,
+    private readonly consolidation: MemoryConsolidationService,
+  ) {}
+
+  async chat(userId: string, input: string) {
+    const threadId = `chat-${userId}`;
+
+    const result = await this.agentService.run('chat-agent', { input, threadId });
+
+    await this.consolidation.consolidate({
+      messages: result.messages ?? [],
+      threadId,
+      userId,
+      scope: { domain: 'chat', enterpriseId: 'ent-1' },
+      semanticMemoryId: 'chat-memory',  // must be a registered ISemanticMemoryAdapter
+    });
+
+    return result.output;
+  }
+}
+```
+
+`IConsolidationOptions`:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `messages` | `BaseMessage[]` | Conversation messages (from `IAgentResult.messages`). |
+| `threadId` | `string` | Conversation thread id. |
+| `userId` | `string` | User identifier. |
+| `scope` | `MemoryScope` | Isolation dimensions for the stored entry. |
+| `semanticMemoryId` | `string` | Id of the registered `ISemanticMemoryAdapter`. |
+| `modelId` | `string` | Optional model id for summarization (uses default). |
+
+### Per-run retrieval injection
+
+Set `semanticMemory` on `IAgentConfig` to automatically prepend relevant long-term memories as a `SystemMessage` before each `run()` / `stream()`:
+
+```typescript
+@AgentDefinition({
+  id: 'billing-agent',
+  modelId: 'gpt4o',
+  systemPrompt: 'You are a billing expert.',
+  semanticMemory: {
+    semanticMemoryId: 'billing-memory',
+    topK: 5,
+    includeInSystemPrompt: true,  // default
+    scope: { domain: 'billing', projectId: 'proj-42' },
+  },
+})
+export class BillingAgent {}
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `semanticMemoryId` | `string` | — | Id of the semantic adapter. |
+| `topK` | `number` | `5` | Number of memories to retrieve. |
+| `includeInSystemPrompt` | `boolean` | `true` | Prepend memories as a `SystemMessage`. |
+| `scope` | `MemoryScope` | `{}` | Filters retrieved memories. |
+
+---
+
+## Multi-domain / CQRS architecture
+
+In CQRS / DDD applications, each **bounded context** owns its agents, sub-agents, graphs, and memories. Map each domain to a NestJS feature module and use `AiKitModule.forFeature()` to register resources additively without coupling domains.
+
+```
+AppModule
+├── BillingModule     (domain: billing)
+│   ├── BillingMemory       @SemanticMemoryDefinition — scope { domain: 'billing' }
+│   ├── BillingAgent        @AgentDefinition — references billing-memory
+│   └── BillingModule       AiKitModule.forFeature({ agents: [BillingAgent] })
+├── SupportModule     (domain: support)
+│   ├── SupportMemory       @SemanticMemoryDefinition — scope { domain: 'support' }
+│   ├── DocSearcherSubAgent @SubAgentDefinition
+│   ├── SupportOrchestrator @AgentDefinition + @UsesSubAgents
+│   ├── TicketQualifier     @AgentDefinition
+│   └── SupportModule       AiKitModule.forFeature({ agents: [...], graphs: [...] })
+└── AnalyticsModule   (domain: analytics)
+    └── ...
+```
+
+### Pattern: one feature module per domain
+
+Each domain declares its definitions as decorated classes and wires them through `forFeature()`:
+
+```typescript
+// billing/billing.definitions.ts
+import { AgentDefinition, SemanticMemoryDefinition } from 'ai-kit';
+
+@SemanticMemoryDefinition({
+  id: 'billing-memory',
+  tableName: 'ai_memories_billing',
+  defaultScope: { domain: 'billing', enterpriseId: 'ent-1' },
+})
+export class BillingMemory {}
+
+@AgentDefinition({
+  id: 'billing-agent',
+  modelId: 'gpt4o',
+  systemPrompt: 'You are a billing expert.',
+  semanticMemory: {
+    semanticMemoryId: 'billing-memory',
+    topK: 5,
+    scope: { domain: 'billing' },
+  },
+})
+export class BillingAgent {}
+```
+
+```typescript
+// billing/billing.service.ts
+import { Injectable, OnModuleInit } from '@nestjs/common';
+import {
+  InjectAgent,
+  SemanticMemoryFactory,
+  MemoryConsolidationService,
+  Agent,
+} from 'ai-kit';
+import { DataSource } from 'typeorm';
+import { OpenAIEmbeddings } from '@langchain/openai';
+import { BillingMemory } from './billing.definitions';
+
+@Injectable()
+export class BillingService implements OnModuleInit {
+  constructor(
+    @InjectAgent('billing-agent') private readonly agent: Agent,
+    private readonly semanticMemoryFactory: SemanticMemoryFactory,
+    private readonly consolidation: MemoryConsolidationService,
+    private readonly dataSource: DataSource,
+    private readonly embeddings: OpenAIEmbeddings,
+  ) {}
+
+  async onModuleInit() {
+    // Idempotent: creates table/indexes only if they don't exist
+    await this.semanticMemoryFactory.createAndRegister(BillingMemory, {
+      dataSource: this.dataSource,
+      embeddings: this.embeddings,
+    });
+  }
+
+  async processInvoice(invoiceId: string, userId: string) {
+    const threadId = `billing-${userId}-${invoiceId}`;
+    const result = await this.agent.run({ input: `Check invoice ${invoiceId}`, threadId });
+
+    // Long-term memory consolidation after the run
+    await this.consolidation.consolidate({
+      messages: result.messages ?? [],
+      threadId,
+      userId,
+      scope: { domain: 'billing', enterpriseId: 'ent-1' },
+      semanticMemoryId: 'billing-memory',
+    });
+
+    return result.output;
+  }
+}
+```
+
+```typescript
+// billing/billing.module.ts
+import { Module } from '@nestjs/common';
+import { AiKitModule } from 'ai-kit';
+import { BillingAgent } from './billing.definitions';
+import { BillingService } from './billing.service';
+
+@Module({
+  imports: [
+    AiKitModule.forFeature({
+      agents: [BillingAgent],
+    }),
+  ],
+  providers: [BillingService],
+  exports: [BillingService],
+})
+export class BillingModule {}
+```
+
+```typescript
+// app.module.ts
+import { Module } from '@nestjs/common';
+import { AiKitModule } from 'ai-kit';
+import { BillingModule } from './billing/billing.module';
+import { SupportModule } from './support/support.module';
+
+@Module({
+  imports: [
+    AiKitModule.forRoot({
+      models: [
+        { id: 'gpt4o', provider: 'openai', modelName: 'gpt-4o', apiKey: process.env.OPENAI_API_KEY },
+      ],
+    }),
+    BillingModule,
+    SupportModule,
+  ],
+})
+export class AppModule {}
+```
+
+> **Full working example**: see [`examples/cqrs-example.ts`](./examples/cqrs-example.ts) for a complete two-domain app (billing + support) with sub-agents, graphs, memory consolidation, and pipeline injection.
+
+### Isolation guarantees
+
+| Level | Mechanism |
+|-------|-----------|
+| **Data isolation** | `defaultScope` on `PgVectorMemoryAdapter` — overrides any caller-supplied scope, preventing cross-domain reads/writes |
+| **Index performance** | GIN index on `scope JSONB` — `@>` containment filtering per domain runs on the index, not a full-table scan |
+| **Module isolation** | Each `forFeature()` module has its own providers; resources merge additively into global registries |
+| **Thread isolation** | B-tree index on `thread_id` — fast per-conversation queries within a domain |
+
+---
+
+
 
 Core services expose stable APIs while keeping engine-specific internals hidden.
 
@@ -625,6 +1032,7 @@ export class MyService {
 
   list() { return this.memoryService.listMemories(); }
   setDefault(id: string) { this.memoryService.setDefaultMemory(id); }
+  semantic() { return this.memoryService.resolveSemanticStore('billing-memory'); }
 }
 ```
 
@@ -634,6 +1042,7 @@ export class MyService {
 | `registerMemories(configs)` | `void` | Registers multiple memories. |
 | `setDefaultMemory(id)` | `void` | Sets the default memory. |
 | `resolve(id?)` | `IMemoryAdapter` | Resolves a memory by id (or default). |
+| `resolveSemanticStore(id?)` | `ISemanticMemoryAdapter` | Resolves and type-checks a semantic adapter. Throws if the adapter doesn't implement `store`/`search`. |
 | `getCheckpointer(id?)` | `unknown` | Returns the LangGraph checkpointer of the memory. |
 | `listMemories()` | `Array<{ id, isDefault }>` | Lists registered memories. |
 
@@ -706,6 +1115,27 @@ export class PipelineService {
 | `run(id, input, threadId?)` | `Promise<IGraphRunResult>` | Delegates to `agentGraph.run()`. |
 | `stream(id, input, threadId?)` | `AsyncIterable<unknown>` | Delegates to `agentGraph.stream()`. |
 | `listGraphs()` | `AgentGraph[]` | Lists all registered graphs. |
+
+---
+
+### MemoryConsolidationService
+
+See [Semantic memory → MemoryConsolidationService](#memoryconsolidationservice) for the full API.
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `consolidate(options)` | `Promise<void>` | Summarizes `messages` with the LLM and stores the result in the semantic adapter. |
+
+---
+
+### SemanticMemoryFactory
+
+See [Semantic memory → SemanticMemoryFactory](#semanticmemoryfactory) for the full API.
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `create(definition, deps)` | `Promise<PgVectorMemoryAdapter>` | Builds and initializes a `PgVectorMemoryAdapter`. Not registered. |
+| `createAndRegister(definition, deps)` | `Promise<PgVectorMemoryAdapter>` | Builds, initializes, and registers with `MemoryService`. |
 
 ---
 
@@ -931,18 +1361,69 @@ interface IToolConfig {
 }
 ```
 
-### `IMemoryAdapter` / `IMemoryConfig`
+### `IMemoryAdapter` / `IMemoryConfig` / `ISemanticMemoryAdapter`
 
 ```typescript
 interface IMemoryAdapter {
   getCheckpointer(): unknown;
 }
 
+interface ISemanticMemoryAdapter extends IMemoryAdapter {
+  store(entry: ConsolidatedMemoryEntry): Promise<void>;
+  search(query: string, opts?: ISemanticSearchOptions): Promise<ConsolidatedMemoryEntry[]>;
+}
+
 interface IMemoryConfig {
   id: string;
   adapter: IMemoryAdapter;
+  type?: 'checkpointer' | 'semantic' | 'composite';
   isDefault?: boolean;
 }
+
+interface ISemanticSearchOptions {
+  topK?: number;
+  scope?: MemoryScope;
+}
+
+interface MemoryScope {
+  domain?: string;
+  enterpriseId?: string;
+  projectId?: string;
+  [key: string]: string | undefined;
+}
+
+interface ConsolidatedMemoryEntry {
+  id?: string;
+  threadId: string;
+  userId?: string;
+  content: string;
+  embedding: number[];
+  scope?: MemoryScope;
+  metadata?: Record<string, unknown>;
+  createdAt?: Date;
+}
+```
+
+### `ISemanticMemoryDefinitionConfig`
+
+```typescript
+interface ISemanticMemoryDefinitionConfig {
+  id: string;
+  tableName?: string;
+  dimensions?: number;
+  defaultScope?: MemoryScope;
+  isDefault?: boolean;
+}
+```
+
+### `SemanticMemoryDefinitionInput`
+
+```typescript
+type SemanticMemoryDefinitionInput =
+  | ISemanticMemoryDefinitionConfig
+  | ISemanticMemoryDefinitionClass;
+
+type ISemanticMemoryDefinitionClass = abstract new (...args: any[]) => unknown;
 ```
 
 ### `IAgentRunOptions`
@@ -1053,6 +1534,10 @@ Common tokens/decorators:
 - `getToolToken(id)`
 - `getSecurityToolToken(id)`
 - `getMemoryToken(id)`
+
+New services globally injectable (no token required — inject by class):
+- `SemanticMemoryFactory` — creates/registers semantic adapters
+- `MemoryConsolidationService` — LLM summarization + pgvector persistence
 
 ---
 
