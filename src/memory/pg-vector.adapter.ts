@@ -115,7 +115,7 @@ export class PgVectorMemoryAdapter implements ISemanticMemoryAdapter {
         created_at  TIMESTAMPTZ DEFAULT NOW()
       )
     `);
-    // Migration : ajoute la colonne scope sur les tables existantes (sans scope)
+    // Assure la présence de la colonne scope (compatibilité ascendante avec les tables existantes)
     await this.dataSource.query(`
       ALTER TABLE ${this.tableName}
         ADD COLUMN IF NOT EXISTS scope JSONB NOT NULL DEFAULT '{}'
@@ -231,22 +231,18 @@ export class PgVectorMemoryAdapter implements ISemanticMemoryAdapter {
    * garantissant que le code appelant ne peut pas sortir des frontières imposées.
    */
   private buildEffectiveScope(callScope?: MemoryScope): Record<string, string> {
-    const result: Record<string, string> = {};
-    // Scope d'appel en premier (priorité basse)
-    if (callScope) {
-      for (const [key, value] of Object.entries(callScope)) {
-        if (value !== undefined) {
-          result[key] = value;
-        }
-      }
-    }
-    // defaultScope en dernier (priorité haute — sécurité)
-    for (const [key, value] of Object.entries(this.defaultScope)) {
-      if (value !== undefined) {
-        result[key] = value;
-      }
-    }
-    return result;
+    // Filtre les valeurs undefined de chaque scope avant la fusion
+    const cleanCallScope = callScope
+      ? Object.fromEntries(
+          Object.entries(callScope).filter(([, v]) => v !== undefined),
+        ) as Record<string, string>
+      : {};
+    const cleanDefaultScope = Object.fromEntries(
+      Object.entries(this.defaultScope).filter(([, v]) => v !== undefined),
+    ) as Record<string, string>;
+
+    // defaultScope en dernier pour prendre la priorité (sécurité)
+    return { ...cleanCallScope, ...cleanDefaultScope };
   }
 
   private rowToEntry(row: any): ConsolidatedMemoryEntry {

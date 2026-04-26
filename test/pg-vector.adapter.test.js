@@ -59,7 +59,7 @@ function makeMockDataSource() {
         return rows
           .filter((r) => {
             if (!scopeFilter || Object.keys(scopeFilter).length === 0) return true;
-            // Vérifie la containance @>
+            // Vérifie la containment @>
             for (const [k, v] of Object.entries(scopeFilter)) {
               if (r.scope[k] !== v) return false;
             }
