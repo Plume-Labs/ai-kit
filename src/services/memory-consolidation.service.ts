@@ -17,42 +17,42 @@ export interface IConsolidationOptions {
   messages: Array<{ role: string; content: string | unknown } | BaseMessage>;
 
   /**
-   * Identifiant du thread source (stocke dans la memoire consolidee).
+   * Identifiant du thread source (stocké dans la mémoire consolidée).
    */
   threadId?: string;
 
   /**
-   * Identifiant de l'utilisateur (stocke dans la memoire consolidee).
+   * Identifiant de l'utilisateur (stocké dans la mémoire consolidée).
    */
   userId?: string;
 
   /**
-   * ID de la memoire semantique cible dans MemoryService.
-   * Si absent, utilise la memoire par defaut (qui doit etre semantique).
+   * ID de la mémoire sémantique cible dans MemoryService.
+   * Si absent, utilise la mémoire par défaut (qui doit etre sémantique).
    */
   semanticMemoryId?: string;
 
   /**
-   * ID du modele a utiliser pour generer le resume.
-   * Si absent, utilise le modele par defaut de ModelService.
+   * ID du modèle a utiliser pour generer le résumé.
+   * Si absent, utilise le modèle par défaut de ModelService.
    */
   modelId?: string;
 
   /**
-   * Metadonnees supplementaires a stocker avec l'entree.
+   * Métadonnées supplémentaires a stocker avec l'entrée.
    */
   metadata?: Record<string, unknown>;
 }
 
 /**
- * Service d'orchestration de la consolidation de memoire.
+ * Service d'orchestration de la consolidation de mémoire.
  *
  * Pipeline :
- *  1. Recevoir les messages d'une conversation terminee.
- *  2. Appeler le LLM (via ModelService) pour en extraire les faits cles.
- *  3. Stocker le resume + son embedding dans un ISemanticMemoryAdapter.
+ *  1. Recevoir les messages d'une conversation terminée.
+ *  2. Appeler le LLM (via ModelService) pour en extraire les faits clés.
+ *  3. Stocker le résumé + son embedding dans un ISemanticMemoryAdapter.
  *
- * La memoire consolidee peut ensuite etre injectee dans le system prompt
+ * La mémoire consolidée peut ensuite etre injectée dans le system prompt
  * des prochains runs via IAgentConfig.semanticMemory.
  *
  * Usage typique :
@@ -75,9 +75,9 @@ export class MemoryConsolidationService {
   ) {}
 
   /**
-   * Consolide une conversation en un resume semantique persistant.
+   * Consolide une conversation en un résumé sémantique persistant.
    *
-   * @returns L'entree creee dans le backend semantique.
+   * @returns L'entrée créée dans le backend sémantique.
    */
   async consolidate(opts: IConsolidationOptions): Promise<ConsolidatedMemoryEntry> {
     const semanticAdapter = this.memoryService.resolveSemanticStore(opts.semanticMemoryId);

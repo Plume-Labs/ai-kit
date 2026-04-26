@@ -63,7 +63,7 @@ export interface IAgentConfig {
   systemPrompt?: string;
   /** IDs des serveurs MCP à utiliser */
   mcpServerIds?: string[];
-  /** ID de la memoire a utiliser (sinon memoire par defaut) */
+  /** ID de la mémoire a utiliser (sinon mémoire par défaut) */
   memoryId?: string;
   /** Sous-agents à déléguer */
   subAgents?: SubAgentDefinitionInput[];
@@ -74,21 +74,21 @@ export interface IAgentConfig {
   /** Options supplémentaires deepagents */
   extra?: Record<string, unknown>;
   /**
-   * Configuration de la memoire semantique long terme.
-   * Si definie, les memoires pertinentes sont recherchees avant chaque run
-   * et injectees dans le contexte de l'agent.
+   * Configuration de la mémoire sémantique long terme.
+   * Si définie, les mémoires pertinentes sont recherchées avant chaque run
+   * et injectées dans le contexte de l'agent.
    */
   semanticMemory?: {
     /**
-     * ID de l'adaptateur semantique dans MemoryService.
+     * ID de l'adaptateur sémantique dans MemoryService.
      * Doit correspondre a un ISemanticMemoryAdapter.
      */
     semanticMemoryId?: string;
-    /** Nombre de memoires a recuperer (defaut : 5) */
+    /** Nombre de mémoires a récupérer (défaut : 5) */
     topK?: number;
     /**
-     * Si true (defaut), les memoires sont injectees comme SystemMessage
-     * dans les messages envoyes a l'agent.
+     * Si true (défaut), les mémoires sont injectées comme SystemMessage
+     * dans les messages envoyés a l'agent.
      */
     includeInSystemPrompt?: boolean;
   };
@@ -234,8 +234,8 @@ export class Agent {
   }
 
   /**
-   * Si une memoire semantique est configuree, recherche les entrees pertinentes
-   * et les prepend comme SystemMessage dans les messages envoyes a l'agent.
+   * Si une mémoire sémantique est configurée, recherche les entrées pertinentes
+   * et les prepend comme SystemMessage dans les messages envoyés a l'agent.
    */
   private async prependSemanticMemories(
     input: IAgentRunOptions['input'],

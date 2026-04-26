@@ -15,7 +15,7 @@ export interface IPgFullMemoryOptions extends IPgVectorMemoryOptions {
   connectionString?: string;
 
   /**
-   * Adaptateur checkpointer pre-construit.
+   * Adaptateur checkpointer pré-construit.
    * Utilise a la place de `connectionString` si fourni.
    */
   checkpointerAdapter?: PostgresCheckpointerAdapter;
@@ -48,9 +48,9 @@ export class PgFullMemoryAdapter implements ICompositeMemoryAdapter {
   /**
    * Fabrique : construit le composite en initialisant le checkpointer Postgres.
    *
-   * @param dataSource  DataSource TypeORM connecte a la meme base (ou une base differente).
-   * @param embeddings  Modele d'embedding pour les requetes semantiques.
-   * @param options     Connection string ou adaptateur checkpointer pre-construit + options pgvector.
+   * @param dataSource  DataSource TypeORM connecté a la même base (ou une base différente).
+   * @param embeddings  Modèle d'embedding pour les requêtes sémantiques.
+   * @param options     Connection string ou adaptateur checkpointer pré-construit + options pgvector.
    */
   static async create(
     dataSource: IDataSource,
@@ -76,8 +76,8 @@ export class PgFullMemoryAdapter implements ICompositeMemoryAdapter {
   }
 
   /**
-   * Cree la table pgvector et ses index.
-   * A appeler une fois au demarrage.
+   * Crée la table pgvector et ses index.
+   * A appeler une fois au démarrage.
    */
   async initialize(): Promise<void> {
     await this.vectorAdapter.initialize();

@@ -4,7 +4,7 @@ import { CheckpointerMemoryAdapter } from '../interfaces/memory.interface';
  * Adaptateur de checkpointer LangGraph persistant via PostgreSQL.
  *
  * Enveloppe un `PostgresSaver` de `@langchain/langgraph-checkpoint-postgres`
- * (dependance optionnelle — doit etre installee dans le projet consommateur).
+ * (dépendance optionnelle — doit etre installee dans le projet consommateur).
  *
  * Usage :
  * ```ts
@@ -18,8 +18,8 @@ import { CheckpointerMemoryAdapter } from '../interfaces/memory.interface';
  */
 export class PostgresCheckpointerAdapter extends CheckpointerMemoryAdapter {
   /**
-   * Cree un adaptateur a partir d'une connection string Postgres.
-   * Appelle `saver.setup()` pour creer les tables LangGraph si necessaire.
+   * Crée un adaptateur a partir d'une connection string Postgres.
+   * Appelle `saver.setup()` pour creer les tables LangGraph si nécessaire.
    *
    * Requiert `@langchain/langgraph-checkpoint-postgres` dans le projet consommateur.
    */
@@ -28,7 +28,7 @@ export class PostgresCheckpointerAdapter extends CheckpointerMemoryAdapter {
   ): Promise<PostgresCheckpointerAdapter> {
     let PostgresSaver: any;
     try {
-      // Chargement dynamique : evite une dependance obligatoire dans ai-kit
+      // Chargement dynamique : évite une dépendance obligatoire dans ai-kit
       ({ PostgresSaver } = require('@langchain/langgraph-checkpoint-postgres'));
     } catch {
       throw new Error(

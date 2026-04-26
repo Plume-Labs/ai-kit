@@ -7,13 +7,13 @@ import {
 
 /**
  * Interface minimale requise pour un DataSource TypeORM.
- * Evite une dependance directe sur le package `typeorm` dans ai-kit.
+ * Évite une dépendance directe sur le package `typeorm` dans ai-kit.
  * Tout objet TypeORM `DataSource` satisfait naturellement ce contrat.
  */
 export interface IDataSource {
-  /** Execute une requete SQL brute. */
+  /** Exécute une requête SQL brute. */
   query(sql: string, parameters?: unknown[]): Promise<any[]>;
-  /** Indique si la connexion est etablie. */
+  /** Indique si la connexion est établie. */
   isInitialized: boolean;
   /** Initialise la connexion si ce n'est pas encore fait. */
   initialize(): Promise<unknown>;
@@ -23,23 +23,23 @@ export interface IDataSource {
  * Options de configuration du PgVectorMemoryAdapter.
  */
 export interface IPgVectorMemoryOptions {
-  /** Nom de la table de stockage (defaut : 'ai_kit_memories') */
+  /** Nom de la table de stockage (défaut : 'ai_kit_memories') */
   tableName?: string;
-  /** Dimension des vecteurs d'embedding (defaut : 1536 pour text-embedding-3-small) */
+  /** Dimension des vecteurs d'embedding (défaut : 1536 pour text-embedding-3-small) */
   dimensions?: number;
 }
 
 /**
- * Adaptateur de memoire long terme base sur pgvector + TypeORM.
+ * Adaptateur de mémoire long terme base sur pgvector + TypeORM.
  *
- * Stocke des entrees de memoire consolidees (texte + embedding) dans une table
- * PostgreSQL avec l'extension pgvector, et permet la recherche par similarite
+ * Stocke des entrées de mémoire consolidées (texte + embedding) dans une table
+ * PostgreSQL avec l'extension pgvector, et permet la recherche par similarité
  * cosinus.
  *
  * Requiert :
- * - L'extension pgvector activee sur votre base PostgreSQL.
- * - Un `DataSource` TypeORM connecte a cette base.
- * - Une implementation de `EmbeddingsInterface` pour vectoriser les requetes.
+ * - L'extension pgvector activée sur votre base PostgreSQL.
+ * - Un `DataSource` TypeORM connecté a cette base.
+ * - Une implementation de `EmbeddingsInterface` pour vectoriser les requêtes.
  *
  * Usage :
  * ```ts
@@ -65,8 +65,8 @@ export class PgVectorMemoryAdapter implements ISemanticMemoryAdapter {
   }
 
   /**
-   * Cree l'extension pgvector et la table de memoire si elles n'existent pas.
-   * A appeler une fois au demarrage (ex: dans onModuleInit du module consommateur).
+   * Crée l'extension pgvector et la table de mémoire si elles n'existent pas.
+   * A appeler une fois au démarrage (ex: dans onModuleInit du module consommateur).
    */
   async initialize(): Promise<void> {
     if (!this.dataSource.isInitialized) {
@@ -91,15 +91,15 @@ export class PgVectorMemoryAdapter implements ISemanticMemoryAdapter {
   }
 
   /**
-   * Retourne null : cet adaptateur ne gere pas de checkpointer LangGraph.
+   * Retourne null : cet adaptateur ne gère pas de checkpointer LangGraph.
    */
   getCheckpointer(): null {
     return null;
   }
 
   /**
-   * Stocke une entree de memoire.
-   * Genere l'embedding via le modele configure si absent.
+   * Stocke une entrée de mémoire.
+   * Génère l'embedding via le modèle configuré si absent.
    */
   async store(entry: ConsolidatedMemoryEntry): Promise<ConsolidatedMemoryEntry> {
     let embedding = entry.embedding;
@@ -124,8 +124,8 @@ export class PgVectorMemoryAdapter implements ISemanticMemoryAdapter {
   }
 
   /**
-   * Recherche les entrees les plus proches par similarite cosinus.
-   * @param query Texte (vectorise automatiquement) ou vecteur pre-calcule.
+   * Recherche les entrées les plus proches par similarité cosinus.
+   * @param query Texte (vectorise automatiquement) ou vecteur pré-calculé.
    */
   async search(
     query: string | number[],

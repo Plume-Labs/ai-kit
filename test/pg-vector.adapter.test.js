@@ -10,7 +10,7 @@ const { MemoryService } = require("../dist/services/memory.service.js");
 
 // ─── Mocks ───────────────────────────────────────────────────────────────────
 
-/** DataSource mock : stocke les lignes en memoire */
+/** DataSource mock : stocké les lignes en mémoire */
 function makeMockDataSource() {
   const rows = [];
   let idCounter = 1;

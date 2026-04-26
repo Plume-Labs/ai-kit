@@ -12,10 +12,10 @@ import {
 const DEFAULT_MEMORY_ID = 'default';
 
 /**
- * Registre des memoires AiKit.
+ * Registre des mémoires AiKit.
  *
- * Gere une memoire par defaut et permet de resoudre un checkpointer
- * a partir d'un id de memoire.
+ * Gere une mémoire par défaut et permet de resoudre un checkpointer
+ * a partir d'un id de mémoire.
  */
 @Injectable()
 export class MemoryService implements OnModuleInit {
@@ -37,7 +37,7 @@ export class MemoryService implements OnModuleInit {
       this.setDefaultMemory(this.options.defaultMemoryId);
     }
 
-    // Compat asc : checkpointer historique (prioritaire sur l'in-memory par defaut)
+    // Compat asc : checkpointer historique (prioritaire sur l'in-memory par défaut)
     if (this.options.checkpointer && !this.registry.has(DEFAULT_MEMORY_ID)) {
       this.registerMemory({
         id: DEFAULT_MEMORY_ID,
@@ -96,9 +96,9 @@ export class MemoryService implements OnModuleInit {
   }
 
   /**
-   * Resout un adaptateur semantique par son id.
-   * Leve une erreur si l'adaptateur ne supporte pas la recherche semantique
-   * (i.e. n'implementes pas ISemanticMemoryAdapter).
+   * Résout un adaptateur sémantique par son id.
+   * Lève une erreur si l'adaptateur ne supporte pas la recherche sémantique
+   * (i.e. n'implémente pas ISemanticMemoryAdapter).
    */
   resolveSemanticStore(memoryId?: string): ISemanticMemoryAdapter {
     const adapter = this.resolve(memoryId);

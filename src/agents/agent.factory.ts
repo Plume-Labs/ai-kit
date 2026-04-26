@@ -38,7 +38,7 @@ export class AgentFactory {
     const interruptOn = this.hitlService._buildInterruptOn(config.hitl);
     const checkpointer = this.memoryService.getCheckpointer(config.memoryId);
 
-    // Resoudre l'adaptateur semantique si configure
+    // Résoudre l'adaptateur sémantique si configuré
     let semanticAdapter: ISemanticMemoryAdapter | undefined;
     if (config.semanticMemory) {
       try {
@@ -46,7 +46,7 @@ export class AgentFactory {
           config.semanticMemory.semanticMemoryId,
         );
       } catch {
-        // Si l'adaptateur n'existe pas encore au moment de la creation,
+        // Si l'adaptateur n'existe pas encore au moment de la création,
         // on laisse semanticAdapter undefined (pas d'injection)
       }
     }
