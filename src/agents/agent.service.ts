@@ -88,7 +88,10 @@ export class AgentService implements OnModuleInit {
       globalToolSelection || config.toolSelection
         ? {
             ...config,
-            toolSelection: { ...globalToolSelection, ...config.toolSelection },
+            toolSelection: {
+              ...(globalToolSelection ?? {}),
+              ...(config.toolSelection ?? {}),
+            },
           }
         : config;
 

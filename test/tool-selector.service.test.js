@@ -240,7 +240,6 @@ test("émet l'avertissement 'embeddingsModel manquant' une seule fois", async ()
   const svc = makeSvc({}); // pas d'embeddingsModel
 
   let warnCount = 0;
-  const origWarn = svc.logger?.warn?.bind(svc.logger);
   // Intercepte les appels warn sur l'instance du logger NestJS
   Object.defineProperty(svc, "logger", {
     value: {
