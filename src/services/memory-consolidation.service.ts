@@ -118,14 +118,21 @@ export class MemoryConsolidationService {
   private formatMessages(
     messages: Array<{ role: string; content: string | unknown } | BaseMessage>,
   ): string {
+    const safeStringify = (val: unknown): string => {
+      try {
+        return JSON.stringify(val);
+      } catch {
+        return String(val);
+      }
+    };
     return messages
       .map((m) => {
         if (this.isBaseMessage(m)) {
           const role = m._getType?.() ?? 'unknown';
-          const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+          const content = typeof m.content === 'string' ? m.content : safeStringify(m.content);
           return `${role}: ${content}`;
         }
-        const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+        const content = typeof m.content === 'string' ? m.content : safeStringify(m.content);
         return `${m.role}: ${content}`;
       })
       .join('\n');

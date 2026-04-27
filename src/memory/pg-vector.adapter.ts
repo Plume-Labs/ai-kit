@@ -134,19 +134,21 @@ export class PgVectorMemoryAdapter implements ISemanticMemoryAdapter {
       ALTER TABLE ${this.tableName}
         ADD COLUMN IF NOT EXISTS scope JSONB NOT NULL DEFAULT '{}'
     `);
+    // Tronque le préfixe pour que les noms d'index restent dans la limite Postgres (63 chars)
+    const idxPrefix = this.tableName.length > 45 ? this.tableName.substring(0, 45) : this.tableName;
     // Index ivfflat pour la recherche par similarité cosinus
     await this.dataSource.query(`
-      CREATE INDEX IF NOT EXISTS ${this.tableName}_embedding_idx
+      CREATE INDEX IF NOT EXISTS ${idxPrefix}_embedding_idx
       ON ${this.tableName} USING ivfflat (embedding vector_cosine_ops)
     `);
     // Index GIN sur scope pour le filtrage par isolation (JSONB @> containment)
     await this.dataSource.query(`
-      CREATE INDEX IF NOT EXISTS ${this.tableName}_scope_idx
+      CREATE INDEX IF NOT EXISTS ${idxPrefix}_scope_idx
       ON ${this.tableName} USING gin (scope)
     `);
     // Index B-tree sur thread_id pour les filtres par thread
     await this.dataSource.query(`
-      CREATE INDEX IF NOT EXISTS ${this.tableName}_thread_id_idx
+      CREATE INDEX IF NOT EXISTS ${idxPrefix}_thread_id_idx
       ON ${this.tableName} (thread_id)
     `);
   }

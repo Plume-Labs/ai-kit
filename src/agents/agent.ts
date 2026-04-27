@@ -148,7 +148,9 @@ export class Agent {
   async run(opts: IAgentRunOptions): Promise<IAgentResult> {
     const threadId = opts.threadId ?? `thread-${Date.now()}`;
     const inputMessages =
-      typeof opts.input === 'string' ? [new HumanMessage(opts.input)] : opts.input;
+      typeof opts.input === 'string'
+        ? [new HumanMessage(opts.input)]
+        : [new HumanMessage(JSON.stringify(opts.input))];
 
     const messages = await this.prependSemanticMemories(opts.input, threadId, inputMessages);
 
@@ -185,7 +187,9 @@ export class Agent {
   async *stream(opts: IAgentRunOptions): AsyncIterable<IAgentStreamEvent> {
     const threadId = opts.threadId ?? `thread-${Date.now()}`;
     const inputMessages =
-      typeof opts.input === 'string' ? [new HumanMessage(opts.input)] : opts.input;
+      typeof opts.input === 'string'
+        ? [new HumanMessage(opts.input)]
+        : [new HumanMessage(JSON.stringify(opts.input))];
 
     const messages = await this.prependSemanticMemories(opts.input, threadId, inputMessages);
 
@@ -267,9 +271,15 @@ export class Agent {
     let semanticAdapter;
     try {
       semanticAdapter = this.memoryService.resolveSemanticStore(semanticCfg.semanticMemoryId);
-    } catch {
-      // L'adaptateur n'est pas encore enregistré (ex : onModuleInit pas encore exécuté)
-      return messages;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // Ignorer silencieusement uniquement si la mémoire n'est pas encore enregistrée
+      // (cas typique : onModuleInit pas encore exécuté). Re-lancer les erreurs de configuration
+      // incorrecte (ex : adaptateur non sémantique).
+      if (msg.includes('Memoire introuvable') || msg.includes('Aucune memoire configuree')) {
+        return messages;
+      }
+      throw err;
     }
 
     const query = typeof input === 'string' ? input : JSON.stringify(input);
