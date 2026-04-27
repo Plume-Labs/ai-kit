@@ -5,6 +5,8 @@ import { McpService } from '../services/mcp.service';
 import { SubAgentService } from './sub-agent.service';
 import { HitlService } from '../services/hitl.service';
 import { MemoryService } from '../services/memory.service';
+import { ToolSelectorService } from '../services/tool-selector.service';
+import { StructuredTool } from '@langchain/core/tools';
 
 /**
  * Factory interne : construit un `Agent` à partir d'une `IAgentConfig`.
@@ -21,11 +23,12 @@ export class AgentFactory {
     private readonly subAgentService: SubAgentService,
     private readonly hitlService: HitlService,
     private readonly memoryService: MemoryService,
+    private readonly toolSelectorService: ToolSelectorService,
   ) {}
 
   async create(config: IAgentConfig): Promise<Agent> {
     const model = this.modelService._getInternalModel(config.modelId);
-    const tools = this.mcpService._getInternalTools(config.mcpServerIds);
+    const allTools = this.mcpService._getInternalTools(config.mcpServerIds);
 
     const subAgents =
       config.subAgents?.length
@@ -37,7 +40,11 @@ export class AgentFactory {
     const interruptOn = this.hitlService._buildInterruptOn(config.hitl);
     const checkpointer = this.memoryService.getCheckpointer(config.memoryId);
 
-    const params: CreateDeepAgentParams = {
+    /**
+     * Construit les paramètres de base du DeepAgent (sans les outils).
+     * Réutilisé pour construire des agents ad-hoc lors de la sélection dynamique.
+     */
+    const buildParams = (tools: StructuredTool[]): CreateDeepAgentParams => ({
       model: model as any,
       tools: tools as any[],
       subagents: subAgents,
@@ -45,10 +52,20 @@ export class AgentFactory {
       ...(interruptOn ? { interruptOn: interruptOn as any } : {}),
       ...(config.responseFormat ? { responseFormat: config.responseFormat as any } : {}),
       ...(config.extra as Record<string, unknown>),
-    } as any;
+    } as any);
 
-    const internal = createDeepAgent(params as any);
+    const internal = createDeepAgent(buildParams(allTools) as any);
 
-    return new Agent(config.id, internal, checkpointer, this.hitlService, config, this.memoryService);
+    return new Agent(
+      config.id,
+      internal,
+      checkpointer,
+      this.hitlService,
+      config,
+      this.memoryService,
+      this.toolSelectorService,
+      allTools,
+      (tools: StructuredTool[]) => createDeepAgent(buildParams(tools) as any),
+    );
   }
 }

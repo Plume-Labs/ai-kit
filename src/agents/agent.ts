@@ -5,6 +5,8 @@ import { SubAgentDefinitionInput } from './sub-agent.interface';
 import { HitlService } from '../services/hitl.service';
 import { MemoryScope } from '../interfaces/memory.interface';
 import { MemoryService } from '../services/memory.service';
+import { ToolSelectorService, IToolSelectionConfig } from '../services/tool-selector.service';
+import { StructuredTool } from '@langchain/core/tools';
 
 // Fragments d'erreur émis par MemoryService pour indiquer une mémoire introuvable
 // ou absente. Utilisés pour distinguer les erreurs "pas encore enregistrée" (ignorées)
@@ -106,6 +108,16 @@ export interface IAgentConfig {
      */
     scope?: MemoryScope;
   };
+  /**
+   * Configuration de la sélection sémantique des outils.
+   * Si activée, seuls les outils sémantiquement pertinents par rapport
+   * au prompt sont transmis à l'agent.
+   *
+   * Surcharge la configuration globale `toolSelection` de `AiKitModuleOptions`.
+   *
+   * Requiert `embeddingsModel` dans `AiKitModuleOptions`.
+   */
+  toolSelection?: IToolSelectionConfig;
 }
 
 // ─── Classe Agent ─────────────────────────────────────────────────────────────
@@ -126,9 +138,19 @@ export class Agent {
   /** @internal Objet interne deepagents — ne pas utiliser directement */
   private readonly _internal: DeepAgent<any>;
 
+  /**
+   * @internal Fonction de reconstruction d'un DeepAgent avec une liste d'outils filtrée.
+   * Utilisée pour la sélection dynamique des outils au moment de l'exécution.
+   */
+  private readonly _buildInternalWithTools: (tools: StructuredTool[]) => DeepAgent<any>;
+
+  /** @internal Liste complète des outils disponibles pour cet agent. */
+  private readonly _allTools: StructuredTool[];
+
   private readonly checkpointer: unknown;
   private readonly hitlService: HitlService;
   private readonly memoryService: MemoryService;
+  private readonly toolSelectorService: ToolSelectorService;
 
   /** @internal Appelé uniquement par AgentFactory */
   constructor(
@@ -138,6 +160,9 @@ export class Agent {
     hitlService: HitlService,
     config: IAgentConfig,
     memoryService: MemoryService,
+    toolSelectorService: ToolSelectorService,
+    allTools: StructuredTool[],
+    buildInternalWithTools: (tools: StructuredTool[]) => DeepAgent<any>,
   ) {
     this.id = id;
     this._internal = internal;
@@ -145,6 +170,9 @@ export class Agent {
     this.hitlService = hitlService;
     this.config = config;
     this.memoryService = memoryService;
+    this.toolSelectorService = toolSelectorService;
+    this._allTools = allTools;
+    this._buildInternalWithTools = buildInternalWithTools;
   }
 
   /**
@@ -159,12 +187,14 @@ export class Agent {
 
     const messages = await this.prependSemanticMemories(opts.input, threadId, inputMessages);
 
+    const internal = await this.resolveInternalForPrompt(opts.input);
+
     const runConfig = {
       configurable: { thread_id: threadId },
       checkpointer: this.checkpointer,
     };
 
-    const result = await this._internal.invoke(
+    const result = await internal.invoke(
       { messages } as any,
       runConfig as any,
     );
@@ -198,13 +228,15 @@ export class Agent {
 
     const messages = await this.prependSemanticMemories(opts.input, threadId, inputMessages);
 
+    const internal = await this.resolveInternalForPrompt(opts.input);
+
     const runConfig = {
       configurable: { thread_id: threadId },
       checkpointer: this.checkpointer,
     };
 
     try {
-      for await (const chunk of await this._internal.stream(
+      for await (const chunk of await internal.stream(
         { messages } as any,
         { ...runConfig, streamMode: 'updates' } as any,
       )) {
@@ -249,6 +281,36 @@ export class Agent {
       output: result?.messages?.[result.messages.length - 1]?.content ?? result,
       meta: { threadId },
     };
+  }
+
+  /**
+   * Résout l'instance DeepAgent à utiliser pour l'invocation courante.
+   *
+   * Si la sélection sémantique des outils est activée, sélectionne dynamiquement
+   * les outils les plus pertinents pour le prompt et reconstruit un agent ad-hoc.
+   * Sinon, retourne l'instance DeepAgent pré-construite avec tous les outils.
+   */
+  private async resolveInternalForPrompt(
+    prompt: IAgentRunOptions['input'],
+  ): Promise<DeepAgent<any>> {
+    const toolSelectionCfg = this.config.toolSelection;
+    if (!toolSelectionCfg?.enabled) {
+      return this._internal;
+    }
+
+    const promptText = typeof prompt === 'string' ? prompt : JSON.stringify(prompt);
+    const selectedTools = await this.toolSelectorService.selectRelevantTools(
+      promptText,
+      this._allTools,
+      toolSelectionCfg,
+    );
+
+    // Si tous les outils sont sélectionnés, réutilise l'agent existant
+    if (selectedTools.length === this._allTools.length) {
+      return this._internal;
+    }
+
+    return this._buildInternalWithTools(selectedTools);
   }
 
   /**

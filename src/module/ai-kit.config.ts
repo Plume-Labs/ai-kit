@@ -5,6 +5,8 @@ import { IMemoryConfig } from '../interfaces/memory.interface';
 import { IAcpServerConfig } from '../interfaces/acp.interface';
 import { AgentDefinitionInput } from '../agents/agent.definition';
 import { IAgentGraph } from '../agents/agent-graph.interface';
+import { EmbeddingsInterface } from '@langchain/core/embeddings';
+import { IToolSelectionConfig } from '../services/tool-selector.service';
 
 /**
  * Options de configuration du module AiKit.
@@ -70,6 +72,18 @@ export interface AiKitModuleOptions {
    * Si absent, la valeur de l'env est utilisée.
    */
   langSmithTracing?: boolean;
+
+  /**
+   * Modèle d'embedding à utiliser pour la sélection sémantique des outils.
+   * Requis si `toolSelection.enabled` est activé sur un agent.
+   */
+  embeddingsModel?: EmbeddingsInterface;
+
+  /**
+   * Configuration globale de la sélection sémantique des outils.
+   * Appliquée à tous les agents sauf surcharge individuelle via `IAgentConfig.toolSelection`.
+   */
+  toolSelection?: IToolSelectionConfig;
 }
 
 /**

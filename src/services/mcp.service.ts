@@ -5,6 +5,7 @@ import { IMcpServerConfig } from '../interfaces/tool.interface';
 import { ITool } from '../interfaces/tool.interface';
 import { AiKitModuleOptions } from '../module/ai-kit.config';
 import { AI_KIT_OPTIONS } from '../module/ai-kit.tokens';
+import { ToolSelectorService } from './tool-selector.service';
 
 /**
  * Service de gestion des serveurs MCP (Model Context Protocol).
@@ -23,6 +24,7 @@ export class McpService implements OnModuleInit, OnModuleDestroy {
   constructor(
     @Inject(AI_KIT_OPTIONS)
     private readonly options: AiKitModuleOptions,
+    private readonly toolSelectorService: ToolSelectorService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -55,6 +57,7 @@ export class McpService implements OnModuleInit, OnModuleDestroy {
     }
 
     await this.reloadTools();
+    this.toolSelectorService.invalidateToolEmbeddingsCache();
   }
 
   /**
@@ -63,6 +66,7 @@ export class McpService implements OnModuleInit, OnModuleDestroy {
    */
   registerTool(id: string, tool: StructuredTool): void {
     this.customToolRegistry.set(id, tool);
+    this.toolSelectorService.invalidateToolEmbeddingsCache();
   }
 
   /**
@@ -70,8 +74,9 @@ export class McpService implements OnModuleInit, OnModuleDestroy {
    */
   registerTools(tools: Array<{ id: string; tool: StructuredTool }>): void {
     for (const { id, tool } of tools) {
-      this.registerTool(id, tool);
+      this.customToolRegistry.set(id, tool);
     }
+    this.toolSelectorService.invalidateToolEmbeddingsCache();
   }
 
   /**

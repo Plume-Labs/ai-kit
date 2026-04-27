@@ -12,6 +12,7 @@ import { McpService } from '../services/mcp.service';
 import { SubAgentService } from './sub-agent.service';
 import { HitlService } from '../services/hitl.service';
 import { MemoryService } from '../services/memory.service';
+import { ToolSelectorService } from '../services/tool-selector.service';
 import { AiKitModuleOptions } from '../module/ai-kit.config';
 import { AI_KIT_OPTIONS } from '../module/ai-kit.tokens';
 
@@ -36,6 +37,7 @@ export class AgentService implements OnModuleInit {
     subAgentService: SubAgentService,
     hitlService: HitlService,
     memoryService: MemoryService,
+    toolSelectorService: ToolSelectorService,
   ) {
     this.factory = new AgentFactory(
       modelService,
@@ -43,6 +45,7 @@ export class AgentService implements OnModuleInit {
       subAgentService,
       hitlService,
       memoryService,
+      toolSelectorService,
     );
   }
 
@@ -65,6 +68,9 @@ export class AgentService implements OnModuleInit {
   /**
    * Enregistre un agent à partir de sa configuration.
    * Retourne l'objet `Agent` prêt à l'exécution.
+   *
+   * La configuration globale `AiKitModuleOptions.toolSelection` est fusionnée
+   * avec la configuration locale de l'agent (la config agent a la priorité).
    */
   async registerAgent(
     input: AgentDefinitionInput,
@@ -76,7 +82,20 @@ export class AgentService implements OnModuleInit {
       return this.registry.get(config.id)!;
     }
 
-    const agent = await this.factory.create(config);
+    // Fusionner la config globale toolSelection avec la config agent (agent a la priorité)
+    const globalToolSelection = this.options.toolSelection;
+    const resolvedConfig =
+      globalToolSelection || config.toolSelection
+        ? {
+            ...config,
+            toolSelection: {
+              ...(globalToolSelection ?? {}),
+              ...(config.toolSelection ?? {}),
+            },
+          }
+        : config;
+
+    const agent = await this.factory.create(resolvedConfig);
     this.registry.set(agent.id, agent);
     this.logger.log(`[AiKit] Agent enregistré : ${agent.id}`);
     return agent;
