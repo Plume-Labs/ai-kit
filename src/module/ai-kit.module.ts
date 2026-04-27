@@ -19,6 +19,7 @@ import { MemoryService } from '../services/memory.service';
 import { SecurityToolService } from '../security/security-tool.service';
 import { MemoryConsolidationService } from '../services/memory-consolidation.service';
 import { SemanticMemoryFactory } from '../memory/semantic-memory.factory';
+import { ToolSelectorService } from '../services/tool-selector.service';
 
 const ALL_SERVICES = [
   ModelService,
@@ -27,6 +28,7 @@ const ALL_SERVICES = [
   MemoryService,
   HitlService,
   SubAgentService,
+  ToolSelectorService,
   AgentService,
   AgentGraphService,
   AcpService,

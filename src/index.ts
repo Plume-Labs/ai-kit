@@ -99,6 +99,8 @@ export { AgentGraphService } from './agents/agent-graph.service';
 export { AcpService } from './services/acp.service';
 export { AiKitConfiguratorService } from './services/ai-kit-configurator.service';
 export { AiKitFeatureInitializer } from './services/ai-kit-feature-initializer.service';
+export { ToolSelectorService } from './services/tool-selector.service';
+export type { IToolSelectionConfig } from './services/tool-selector.service';
 
 // ─── Tokens d'injection ───────────────────────────────────────────────────────
 export {

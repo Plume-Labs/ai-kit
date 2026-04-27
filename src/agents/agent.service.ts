@@ -12,6 +12,7 @@ import { McpService } from '../services/mcp.service';
 import { SubAgentService } from './sub-agent.service';
 import { HitlService } from '../services/hitl.service';
 import { MemoryService } from '../services/memory.service';
+import { ToolSelectorService } from '../services/tool-selector.service';
 import { AiKitModuleOptions } from '../module/ai-kit.config';
 import { AI_KIT_OPTIONS } from '../module/ai-kit.tokens';
 
@@ -36,6 +37,7 @@ export class AgentService implements OnModuleInit {
     subAgentService: SubAgentService,
     hitlService: HitlService,
     memoryService: MemoryService,
+    toolSelectorService: ToolSelectorService,
   ) {
     this.factory = new AgentFactory(
       modelService,
@@ -43,6 +45,7 @@ export class AgentService implements OnModuleInit {
       subAgentService,
       hitlService,
       memoryService,
+      toolSelectorService,
     );
   }
 
