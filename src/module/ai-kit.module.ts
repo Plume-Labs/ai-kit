@@ -17,6 +17,8 @@ import { getSecurityToolToken } from '../interfaces/security-tool.tokens';
 import { getMemoryToken } from '../interfaces/memory.tokens';
 import { MemoryService } from '../services/memory.service';
 import { SecurityToolService } from '../security/security-tool.service';
+import { MemoryConsolidationService } from '../services/memory-consolidation.service';
+import { SemanticMemoryFactory } from '../memory/semantic-memory.factory';
 
 const ALL_SERVICES = [
   ModelService,
@@ -29,6 +31,8 @@ const ALL_SERVICES = [
   AgentGraphService,
   AcpService,
   AiKitConfiguratorService,
+  MemoryConsolidationService,
+  SemanticMemoryFactory,
 ];
 
 /**

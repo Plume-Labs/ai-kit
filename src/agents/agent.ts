@@ -1,8 +1,15 @@
 import { DeepAgent } from 'deepagents';
-import { HumanMessage } from '@langchain/core/messages';
+import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { IHumanInTheLoopConfig } from '../interfaces/hitl.interface';
 import { SubAgentDefinitionInput } from './sub-agent.interface';
 import { HitlService } from '../services/hitl.service';
+import { MemoryScope } from '../interfaces/memory.interface';
+import { MemoryService } from '../services/memory.service';
+
+// Fragments d'erreur émis par MemoryService pour indiquer une mémoire introuvable
+// ou absente. Utilisés pour distinguer les erreurs "pas encore enregistrée" (ignorées)
+// des erreurs de mauvaise configuration (re-lancées).
+const MEMORY_NOT_FOUND_FRAGMENTS = ['Memoire introuvable', 'Aucune memoire configuree'] as const;
 
 // ─── Interfaces publiques ─────────────────────────────────────────────────────
 
@@ -62,7 +69,7 @@ export interface IAgentConfig {
   systemPrompt?: string;
   /** IDs des serveurs MCP à utiliser */
   mcpServerIds?: string[];
-  /** ID de la memoire a utiliser (sinon memoire par defaut) */
+  /** ID de la mémoire a utiliser (sinon mémoire par défaut) */
   memoryId?: string;
   /** Sous-agents à déléguer */
   subAgents?: SubAgentDefinitionInput[];
@@ -72,6 +79,33 @@ export interface IAgentConfig {
   responseFormat?: Record<string, unknown>;
   /** Options supplémentaires deepagents */
   extra?: Record<string, unknown>;
+  /**
+   * Configuration de la mémoire sémantique long terme.
+   * Si définie, les mémoires pertinentes sont recherchées avant chaque run
+   * et injectées dans le contexte de l'agent.
+   */
+  semanticMemory?: {
+    /**
+     * ID de l'adaptateur sémantique dans MemoryService.
+     * Doit correspondre à un ISemanticMemoryAdapter.
+     */
+    semanticMemoryId?: string;
+    /** Nombre de mémoires à récupérer (défaut : 5) */
+    topK?: number;
+    /**
+     * Si true (défaut), les mémoires sont injectées comme SystemMessage
+     * dans les messages envoyés à l'agent.
+     */
+    includeInSystemPrompt?: boolean;
+    /**
+     * Scope d'isolation à appliquer lors de la recherche de mémoires.
+     * Fusionné avec le `defaultScope` de l'adaptateur (le defaultScope prend la priorité).
+     *
+     * Permet d'affiner la recherche au-delà du scope par défaut de l'adaptateur,
+     * par exemple pour cibler un projet ou un contexte spécifique.
+     */
+    scope?: MemoryScope;
+  };
 }
 
 // ─── Classe Agent ─────────────────────────────────────────────────────────────
@@ -94,6 +128,7 @@ export class Agent {
 
   private readonly checkpointer: unknown;
   private readonly hitlService: HitlService;
+  private readonly memoryService: MemoryService;
 
   /** @internal Appelé uniquement par AgentFactory */
   constructor(
@@ -102,12 +137,14 @@ export class Agent {
     checkpointer: unknown,
     hitlService: HitlService,
     config: IAgentConfig,
+    memoryService: MemoryService,
   ) {
     this.id = id;
     this._internal = internal;
     this.checkpointer = checkpointer;
     this.hitlService = hitlService;
     this.config = config;
+    this.memoryService = memoryService;
   }
 
   /**
@@ -115,8 +152,12 @@ export class Agent {
    */
   async run(opts: IAgentRunOptions): Promise<IAgentResult> {
     const threadId = opts.threadId ?? `thread-${Date.now()}`;
-    const input =
-      typeof opts.input === 'string' ? [new HumanMessage(opts.input)] : opts.input;
+    const inputMessages =
+      typeof opts.input === 'string'
+        ? [new HumanMessage(opts.input)]
+        : [new HumanMessage(JSON.stringify(opts.input))];
+
+    const messages = await this.prependSemanticMemories(opts.input, threadId, inputMessages);
 
     const runConfig = {
       configurable: { thread_id: threadId },
@@ -124,7 +165,7 @@ export class Agent {
     };
 
     const result = await this._internal.invoke(
-      { messages: input } as any,
+      { messages } as any,
       runConfig as any,
     );
 
@@ -150,8 +191,12 @@ export class Agent {
    */
   async *stream(opts: IAgentRunOptions): AsyncIterable<IAgentStreamEvent> {
     const threadId = opts.threadId ?? `thread-${Date.now()}`;
-    const input =
-      typeof opts.input === 'string' ? [new HumanMessage(opts.input)] : opts.input;
+    const inputMessages =
+      typeof opts.input === 'string'
+        ? [new HumanMessage(opts.input)]
+        : [new HumanMessage(JSON.stringify(opts.input))];
+
+    const messages = await this.prependSemanticMemories(opts.input, threadId, inputMessages);
 
     const runConfig = {
       configurable: { thread_id: threadId },
@@ -160,7 +205,7 @@ export class Agent {
 
     try {
       for await (const chunk of await this._internal.stream(
-        { messages: input } as any,
+        { messages } as any,
         { ...runConfig, streamMode: 'updates' } as any,
       )) {
         yield { type: 'text', data: chunk };
@@ -204,5 +249,59 @@ export class Agent {
       output: result?.messages?.[result.messages.length - 1]?.content ?? result,
       meta: { threadId },
     };
+  }
+
+  /**
+   * Si une mémoire sémantique est configurée, recherche les entrées pertinentes
+   * et les prepend comme SystemMessage dans les messages envoyés a l'agent.
+   *
+   * La résolution de l'adaptateur est différée à l'exécution (lazy) pour
+   * permettre l'enregistrement de la mémoire après la création de l'agent
+   * (cas typique avec SemanticMemoryFactory.createAndRegister en onModuleInit).
+   *
+   * La recherche n'est PAS filtrée par threadId par défaut : la mémoire
+   * sémantique est conçue pour la récupération long terme cross-thread.
+   * Affinez avec `scope` pour l'isolation domaine/utilisateur/projet.
+   */
+  private async prependSemanticMemories(
+    input: IAgentRunOptions['input'],
+    _threadId: string,
+    messages: unknown,
+  ): Promise<unknown> {
+    const semanticCfg = this.config.semanticMemory;
+    if (!semanticCfg || semanticCfg.includeInSystemPrompt === false || !Array.isArray(messages)) {
+      return messages;
+    }
+
+    let semanticAdapter;
+    try {
+      semanticAdapter = this.memoryService.resolveSemanticStore(semanticCfg.semanticMemoryId);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // Ignorer silencieusement uniquement si la mémoire n'est pas encore enregistrée
+      // (cas typique : onModuleInit pas encore exécuté). Re-lancer les erreurs de configuration
+      // incorrecte (ex : adaptateur non sémantique).
+      if (MEMORY_NOT_FOUND_FRAGMENTS.some((fragment) => msg.includes(fragment))) {
+        return messages;
+      }
+      throw err;
+    }
+
+    const query = typeof input === 'string' ? input : JSON.stringify(input);
+    const memories = await semanticAdapter.search(query, {
+      k: semanticCfg.topK ?? 5,
+      scope: semanticCfg.scope,
+    });
+
+    if (memories.length === 0) {
+      return messages;
+    }
+
+    const memoryBlock = memories.map((m) => m.content).join('\n---\n');
+    const memoryMessage = new SystemMessage(
+      `<relevant_memories>\n${memoryBlock}\n</relevant_memories>`,
+    );
+
+    return [memoryMessage, ...messages];
   }
 }

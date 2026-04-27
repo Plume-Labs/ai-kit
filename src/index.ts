@@ -71,7 +71,7 @@ export type {
   IAcpAuthMethodEnvVar,
 } from './interfaces/acp.interface';
 
-export type { IMemoryAdapter, IMemoryConfig } from './interfaces/memory.interface';
+export type { IMemoryAdapter, IMemoryConfig, ISemanticMemoryAdapter, ICompositeMemoryAdapter, ConsolidatedMemoryEntry, ISemanticSearchOptions, MemoryScope } from './interfaces/memory.interface';
 
 // ─── Objets domaine ───────────────────────────────────────────────────────────
 export { Agent } from './agents/agent';
@@ -116,3 +116,16 @@ export {
 } from './module/ai-kit.tokens';
 
 export { CheckpointerMemoryAdapter, InMemoryAdapter } from './interfaces/memory.interface';
+
+// ─── Adaptateurs mémoire ──────────────────────────────────────────────────────
+export { PostgresCheckpointerAdapter } from './memory/postgres-checkpointer.adapter';
+export { PgVectorMemoryAdapter } from './memory/pg-vector.adapter';
+export type { IDataSource, IPgVectorMemoryOptions } from './memory/pg-vector.adapter';
+export { PgFullMemoryAdapter } from './memory/pg-full.adapter';
+export type { IPgFullMemoryOptions } from './memory/pg-full.adapter';
+export { MemoryConsolidationService } from './services/memory-consolidation.service';
+export type { IConsolidationOptions } from './services/memory-consolidation.service';
+export { SemanticMemoryDefinition, getSemanticMemoryDefinitionMetadata, isSemanticMemoryDefinitionClass, resolveSemanticMemoryDefinitionInput } from './memory/semantic-memory.definition';
+export type { ISemanticMemoryDefinitionConfig, ISemanticMemoryDefinitionClass, SemanticMemoryDefinitionInput } from './memory/semantic-memory.definition';
+export { SemanticMemoryFactory } from './memory/semantic-memory.factory';
+export type { ISemanticMemoryRuntimeDeps } from './memory/semantic-memory.factory';

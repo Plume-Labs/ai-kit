@@ -49,6 +49,6 @@ export class AgentFactory {
 
     const internal = createDeepAgent(params as any);
 
-    return new Agent(config.id, internal, checkpointer, this.hitlService, config);
+    return new Agent(config.id, internal, checkpointer, this.hitlService, config, this.memoryService);
   }
 }
