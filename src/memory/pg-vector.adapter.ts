@@ -88,6 +88,13 @@ export class PgVectorMemoryAdapter implements ISemanticMemoryAdapter {
    */
   private static readonly VALID_IDENTIFIER = /^[a-zA-Z_][a-zA-Z0-9_]{0,62}$/;
 
+  /**
+   * Longueur maximale du préfixe utilisé pour générer les noms d'index.
+   * Garantit que le nom complet (préfixe + suffixe tel que '_embedding_idx')
+   * reste dans la limite Postgres des 63 caractères par identifiant.
+   */
+  private static readonly MAX_INDEX_PREFIX_LENGTH = 45;
+
   constructor(
     private readonly dataSource: IDataSource,
     private readonly embeddings: EmbeddingsInterface,
@@ -135,7 +142,10 @@ export class PgVectorMemoryAdapter implements ISemanticMemoryAdapter {
         ADD COLUMN IF NOT EXISTS scope JSONB NOT NULL DEFAULT '{}'
     `);
     // Tronque le préfixe pour que les noms d'index restent dans la limite Postgres (63 chars)
-    const idxPrefix = this.tableName.length > 45 ? this.tableName.substring(0, 45) : this.tableName;
+    const idxPrefix =
+      this.tableName.length > PgVectorMemoryAdapter.MAX_INDEX_PREFIX_LENGTH
+        ? this.tableName.substring(0, PgVectorMemoryAdapter.MAX_INDEX_PREFIX_LENGTH)
+        : this.tableName;
     // Index ivfflat pour la recherche par similarité cosinus
     await this.dataSource.query(`
       CREATE INDEX IF NOT EXISTS ${idxPrefix}_embedding_idx

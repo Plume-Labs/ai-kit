@@ -6,6 +6,11 @@ import { HitlService } from '../services/hitl.service';
 import { MemoryScope } from '../interfaces/memory.interface';
 import { MemoryService } from '../services/memory.service';
 
+// Fragments d'erreur émis par MemoryService pour indiquer une mémoire introuvable
+// ou absente. Utilisés pour distinguer les erreurs "pas encore enregistrée" (ignorées)
+// des erreurs de mauvaise configuration (re-lancées).
+const MEMORY_NOT_FOUND_FRAGMENTS = ['Memoire introuvable', 'Aucune memoire configuree'] as const;
+
 // ─── Interfaces publiques ─────────────────────────────────────────────────────
 
 /**
@@ -276,7 +281,7 @@ export class Agent {
       // Ignorer silencieusement uniquement si la mémoire n'est pas encore enregistrée
       // (cas typique : onModuleInit pas encore exécuté). Re-lancer les erreurs de configuration
       // incorrecte (ex : adaptateur non sémantique).
-      if (msg.includes('Memoire introuvable') || msg.includes('Aucune memoire configuree')) {
+      if (MEMORY_NOT_FOUND_FRAGMENTS.some((fragment) => msg.includes(fragment))) {
         return messages;
       }
       throw err;
