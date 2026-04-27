@@ -232,3 +232,96 @@ test("invalide le cache et recalcule les embeddings d'outils après invalidation
   // Après invalidation, les embeddings des outils doivent être recalculés
   assert.equal(afterSecondCall - afterFirstCall, afterFirstCall);
 });
+
+// ─── Avertissement unique (warn-once) ────────────────────────────────────────
+
+test("émet l'avertissement 'embeddingsModel manquant' une seule fois", async () => {
+  const tools = Array.from({ length: 10 }, (_, i) => makeTool(`t${i}`, `d${i}`));
+  const svc = makeSvc({}); // pas d'embeddingsModel
+
+  let warnCount = 0;
+  const origWarn = svc.logger?.warn?.bind(svc.logger);
+  // Intercepte les appels warn sur l'instance du logger NestJS
+  Object.defineProperty(svc, "logger", {
+    value: {
+      warn: () => { warnCount++; },
+      debug: () => {},
+      error: () => {},
+      log: () => {},
+    },
+    writable: true,
+  });
+
+  await svc.selectRelevantTools("query", tools, { enabled: true });
+  await svc.selectRelevantTools("query", tools, { enabled: true });
+  await svc.selectRelevantTools("query", tools, { enabled: true });
+
+  assert.equal(warnCount, 1);
+});
+
+// ─── Validation des paramètres ────────────────────────────────────────────────
+
+test("topK <= 0 est ramené à 1 (retourne au moins 1 outil)", async () => {
+  const embeddings = {
+    embedQuery: async () => [1, 0],
+  };
+  const svc = makeSvc({ embeddingsModel: embeddings });
+  const tools = Array.from({ length: 6 }, (_, i) => makeTool(`t${i}`, `d${i}`));
+
+  const result = await svc.selectRelevantTools("query", tools, { enabled: true, topK: 0 });
+
+  assert.equal(result.length, 1);
+});
+
+test("minSimilarity négatif est ramené à 0 (pas de filtrage abusif)", async () => {
+  const embeddings = {
+    embedQuery: async () => [1, 0],
+  };
+  const svc = makeSvc({ embeddingsModel: embeddings });
+  const tools = Array.from({ length: 6 }, (_, i) => makeTool(`t${i}`, `d${i}`));
+
+  // minSimilarity < 0 ne devrait pas exclure les outils
+  const result = await svc.selectRelevantTools("query", tools, {
+    enabled: true,
+    topK: 10,
+    minSimilarity: -5,
+  });
+
+  assert.equal(result.length, tools.length);
+});
+
+test("minSimilarity > 1 est ramené à 1 (exclut tous les outils)", async () => {
+  const embeddings = {
+    embedQuery: async () => [1, 0],
+  };
+  const svc = makeSvc({ embeddingsModel: embeddings });
+  const tools = Array.from({ length: 6 }, (_, i) => makeTool(`t${i}`, `d${i}`));
+
+  // minSimilarity > 1 ne devrait jamais retourner d'outils sauf score == 1
+  const result = await svc.selectRelevantTools("query", tools, {
+    enabled: true,
+    topK: 10,
+    minSimilarity: 2,
+  });
+
+  // Tous les vecteurs sont [1,0], le prompt est [1,0] → similarité cosinus = 1
+  // Après clamp à 1.0, tous les outils passent le seuil
+  assert.equal(result.length, tools.length);
+});
+
+// ─── Fail-open sur erreur d'embedding ────────────────────────────────────────
+
+test("retourne tous les outils si embedQuery lève une erreur (fail-open)", async () => {
+  const embeddings = {
+    embedQuery: async () => {
+      throw new Error("API embedding indisponible");
+    },
+  };
+  const svc = makeSvc({ embeddingsModel: embeddings });
+  const tools = Array.from({ length: 10 }, (_, i) => makeTool(`t${i}`, `d${i}`));
+
+  // Ne doit pas propager l'erreur
+  const result = await svc.selectRelevantTools("query", tools, { enabled: true });
+
+  assert.deepEqual(result, tools);
+});

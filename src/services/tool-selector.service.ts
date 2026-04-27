@@ -50,11 +50,14 @@ const BYPASS_TOOL_COUNT = 5;
 export class ToolSelectorService {
   private readonly logger = new Logger(ToolSelectorService.name);
 
-  /** Cache des embeddings d'outils : clé = texte de description, valeur = vecteur. */
+  /** Cache des embeddings d'outils : clé = `${tool.name}: ${tool.description}`, valeur = vecteur. */
   private readonly embeddingCache = new Map<string, number[]>();
 
   /** Modèle d'embedding fourni via AiKitModuleOptions. Peut être absent. */
   private readonly embeddings?: EmbeddingsInterface;
+
+  /** Indique si l'avertissement "modèle d'embedding absent" a déjà été émis. */
+  private _missingEmbeddingsWarned = false;
 
   constructor(
     @Inject(AI_KIT_OPTIONS)
@@ -82,10 +85,13 @@ export class ToolSelectorService {
 
     // Bypass si aucun modèle d'embedding n'est configuré
     if (!this.embeddings) {
-      this.logger.warn(
-        "[AiKit] ToolSelectorService : aucun modèle d'embedding configuré (embeddingsModel manquant). " +
-          "Tous les outils sont transmis à l'agent.",
-      );
+      if (!this._missingEmbeddingsWarned) {
+        this._missingEmbeddingsWarned = true;
+        this.logger.warn(
+          "[AiKit] ToolSelectorService : aucun modèle d'embedding configuré (embeddingsModel manquant). " +
+            "Tous les outils sont transmis à l'agent.",
+        );
+      }
       return tools;
     }
 
@@ -94,34 +100,44 @@ export class ToolSelectorService {
       return tools;
     }
 
-    const topK = config.topK ?? 10;
-    const minSimilarity = config.minSimilarity ?? 0;
+    // Borne topK à un entier >= 1 et minSimilarity dans [0, 1]
+    const topK = Math.max(1, Math.floor(config.topK ?? 10));
+    const minSimilarity = Math.min(1, Math.max(0, config.minSimilarity ?? 0));
 
-    // Calcule l'embedding du prompt
-    const promptEmbedding = await this.embeddings.embedQuery(prompt);
+    // Fail-open : en cas d'erreur réseau/API, retourne tous les outils plutôt que de bloquer l'agent
+    try {
+      // Calcule l'embedding du prompt
+      const promptEmbedding = await this.embeddings.embedQuery(prompt);
 
-    // Calcule (ou récupère depuis le cache) l'embedding de chaque outil
-    const scored: Array<{ tool: StructuredTool; score: number }> = await Promise.all(
-      tools.map(async (tool) => {
-        const text = `${tool.name}: ${tool.description}`;
-        const toolEmbedding = await this.getToolEmbedding(text);
-        const score = cosineSimilarity(promptEmbedding, toolEmbedding);
-        return { tool, score };
-      }),
-    );
+      // Calcule (ou récupère depuis le cache) l'embedding de chaque outil
+      const scored: Array<{ tool: StructuredTool; score: number }> = await Promise.all(
+        tools.map(async (tool) => {
+          const text = `${tool.name}: ${tool.description}`;
+          const toolEmbedding = await this.getToolEmbedding(text);
+          const score = cosineSimilarity(promptEmbedding, toolEmbedding);
+          return { tool, score };
+        }),
+      );
 
-    // Filtre par seuil de similarité et trie par score décroissant
-    const filtered = scored
-      .filter((s) => s.score >= minSimilarity)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, topK)
-      .map((s) => s.tool);
+      // Filtre par seuil de similarité et trie par score décroissant
+      const filtered = scored
+        .filter((s) => s.score >= minSimilarity)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, topK)
+        .map((s) => s.tool);
 
-    this.logger.debug(
-      `[AiKit] ToolSelectorService : ${filtered.length}/${tools.length} outil(s) sélectionné(s) (topK=${topK}, minSimilarity=${minSimilarity})`,
-    );
+      this.logger.debug(
+        `[AiKit] ToolSelectorService : ${filtered.length}/${tools.length} outil(s) sélectionné(s) (topK=${topK}, minSimilarity=${minSimilarity})`,
+      );
 
-    return filtered;
+      return filtered;
+    } catch (err) {
+      this.logger.error(
+        "[AiKit] ToolSelectorService : erreur lors du calcul des embeddings, retour de la liste complète des outils.",
+        err,
+      );
+      return tools;
+    }
   }
 
   /**

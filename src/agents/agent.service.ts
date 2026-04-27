@@ -68,6 +68,9 @@ export class AgentService implements OnModuleInit {
   /**
    * Enregistre un agent à partir de sa configuration.
    * Retourne l'objet `Agent` prêt à l'exécution.
+   *
+   * La configuration globale `AiKitModuleOptions.toolSelection` est fusionnée
+   * avec la configuration locale de l'agent (la config agent a la priorité).
    */
   async registerAgent(
     input: AgentDefinitionInput,
@@ -79,7 +82,17 @@ export class AgentService implements OnModuleInit {
       return this.registry.get(config.id)!;
     }
 
-    const agent = await this.factory.create(config);
+    // Fusionner la config globale toolSelection avec la config agent (agent a la priorité)
+    const globalToolSelection = this.options.toolSelection;
+    const resolvedConfig =
+      globalToolSelection || config.toolSelection
+        ? {
+            ...config,
+            toolSelection: { ...globalToolSelection, ...config.toolSelection },
+          }
+        : config;
+
+    const agent = await this.factory.create(resolvedConfig);
     this.registry.set(agent.id, agent);
     this.logger.log(`[AiKit] Agent enregistré : ${agent.id}`);
     return agent;
