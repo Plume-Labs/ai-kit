@@ -411,3 +411,34 @@ test("MemoryConsolidationService.consolidate() stores scope on consolidated entr
   assert.equal(entry.scope?.projectId, "proj-99");
 });
 
+
+// ─── Tests de validation du tableName ────────────────────────────────────────
+
+test("PgVectorMemoryAdapter rejette un tableName invalide (injection SQL)", () => {
+  assert.throws(
+    () =>
+      new PgVectorMemoryAdapter(makeMockDataSource(), makeMockEmbeddings(), {
+        tableName: "users; DROP TABLE users--",
+      }),
+    /Nom de table invalide/,
+  );
+});
+
+test("PgVectorMemoryAdapter rejette un tableName avec des espaces", () => {
+  assert.throws(
+    () =>
+      new PgVectorMemoryAdapter(makeMockDataSource(), makeMockEmbeddings(), {
+        tableName: "my table",
+      }),
+    /Nom de table invalide/,
+  );
+});
+
+test("PgVectorMemoryAdapter accepte un tableName valide avec underscores", () => {
+  assert.doesNotThrow(
+    () =>
+      new PgVectorMemoryAdapter(makeMockDataSource(), makeMockEmbeddings(), {
+        tableName: "ai_memories_billing",
+      }),
+  );
+});

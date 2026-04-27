@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { BaseMessage } from '@langchain/core/messages';
 import { ConsolidatedMemoryEntry, MemoryScope } from '../interfaces/memory.interface';
-import { ISemanticMemoryAdapter } from '../interfaces/memory.interface';
 import { MemoryService } from './memory.service';
 import { ModelService } from '../models/model.service';
 

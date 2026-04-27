@@ -12,7 +12,8 @@
  * Points clés :
  * - Un @SemanticMemoryDefinition par domaine  → isolation stricte par defaultScope
  * - Un AiKitModule.forFeature() par module    → enregistrement additif dans les services globaux
- * - @InjectAgent / @InjectMemory              → injection directe dans les services
+ * - @InjectAgent / @InjectAgentGraph          → injection directe des objets domaine dans les services
+ * - SemanticMemoryFactory.createAndRegister() → initialisation lazy en onModuleInit (après la création des agents)
  * - MemoryConsolidationService                → consolidation LLM → pgvector après chaque run
  */
 
@@ -34,7 +35,6 @@ import {
   SemanticMemoryDefinition,
   // Injection
   InjectAgent,
-  InjectMemory,
   InjectAgentGraph,
   // Factory mémoire
   SemanticMemoryFactory,
@@ -43,7 +43,6 @@ import {
   // Types
   Agent,
   AgentGraph,
-  IMemoryAdapter,
 } from 'ai-kit';
 
 // ─── 1. Définitions du domaine Facturation ────────────────────────────────────
@@ -86,10 +85,6 @@ export class BillingService implements OnModuleInit {
     // Injection directe de l'agent déclaré dans forFeature()
     @InjectAgent('billing-agent')
     private readonly billingAgent: Agent,
-
-    // Injection de la mémoire (IMemoryAdapter du checkpointer LangGraph)
-    @InjectMemory('billing-memory')
-    private readonly billingMemory: IMemoryAdapter,
 
     // SemanticMemoryFactory est globalement injectable (ALL_SERVICES)
     private readonly semanticMemoryFactory: SemanticMemoryFactory,
@@ -147,9 +142,6 @@ export class BillingService implements OnModuleInit {
   imports: [
     AiKitModule.forFeature({
       agents: [BillingAgent],
-      // La mémoire est enregistrée dans onModuleInit() via SemanticMemoryFactory ;
-      // on la déclare ici pour que @InjectMemory('billing-memory') soit résolvable.
-      memories: [],
     }),
   ],
   providers: [BillingService],

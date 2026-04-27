@@ -3,7 +3,8 @@ import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { IHumanInTheLoopConfig } from '../interfaces/hitl.interface';
 import { SubAgentDefinitionInput } from './sub-agent.interface';
 import { HitlService } from '../services/hitl.service';
-import { ISemanticMemoryAdapter, MemoryScope } from '../interfaces/memory.interface';
+import { MemoryScope } from '../interfaces/memory.interface';
+import { MemoryService } from '../services/memory.service';
 
 // ─── Interfaces publiques ─────────────────────────────────────────────────────
 
@@ -122,7 +123,7 @@ export class Agent {
 
   private readonly checkpointer: unknown;
   private readonly hitlService: HitlService;
-  private readonly semanticAdapter?: ISemanticMemoryAdapter;
+  private readonly memoryService: MemoryService;
 
   /** @internal Appelé uniquement par AgentFactory */
   constructor(
@@ -131,14 +132,14 @@ export class Agent {
     checkpointer: unknown,
     hitlService: HitlService,
     config: IAgentConfig,
-    semanticAdapter?: ISemanticMemoryAdapter,
+    memoryService: MemoryService,
   ) {
     this.id = id;
     this._internal = internal;
     this.checkpointer = checkpointer;
     this.hitlService = hitlService;
     this.config = config;
-    this.semanticAdapter = semanticAdapter;
+    this.memoryService = memoryService;
   }
 
   /**
@@ -244,25 +245,35 @@ export class Agent {
   /**
    * Si une mémoire sémantique est configurée, recherche les entrées pertinentes
    * et les prepend comme SystemMessage dans les messages envoyés a l'agent.
+   *
+   * La résolution de l'adaptateur est différée à l'exécution (lazy) pour
+   * permettre l'enregistrement de la mémoire après la création de l'agent
+   * (cas typique avec SemanticMemoryFactory.createAndRegister en onModuleInit).
+   *
+   * La recherche n'est PAS filtrée par threadId par défaut : la mémoire
+   * sémantique est conçue pour la récupération long terme cross-thread.
+   * Affinez avec `scope` pour l'isolation domaine/utilisateur/projet.
    */
   private async prependSemanticMemories(
     input: IAgentRunOptions['input'],
-    threadId: string,
+    _threadId: string,
     messages: unknown,
   ): Promise<unknown> {
     const semanticCfg = this.config.semanticMemory;
-    if (
-      !this.semanticAdapter ||
-      !semanticCfg ||
-      semanticCfg.includeInSystemPrompt === false ||
-      !Array.isArray(messages)
-    ) {
+    if (!semanticCfg || semanticCfg.includeInSystemPrompt === false || !Array.isArray(messages)) {
+      return messages;
+    }
+
+    let semanticAdapter;
+    try {
+      semanticAdapter = this.memoryService.resolveSemanticStore(semanticCfg.semanticMemoryId);
+    } catch {
+      // L'adaptateur n'est pas encore enregistré (ex : onModuleInit pas encore exécuté)
       return messages;
     }
 
     const query = typeof input === 'string' ? input : JSON.stringify(input);
-    const memories = await this.semanticAdapter.search(query, {
-      threadId,
+    const memories = await semanticAdapter.search(query, {
       k: semanticCfg.topK ?? 5,
       scope: semanticCfg.scope,
     });

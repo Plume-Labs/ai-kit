@@ -592,7 +592,8 @@ The adapter uses a **duck-typed `IDataSource`** so TypeORM is a consumer-side de
 import { PgVectorMemoryAdapter } from 'ai-kit';
 import { OpenAIEmbeddings } from '@langchain/openai';
 
-const adapter = new PgVectorMemoryAdapter(dataSource, new OpenAIEmbeddings(), {
+const embeddings = new OpenAIEmbeddings();
+const adapter = new PgVectorMemoryAdapter(dataSource, embeddings, {
   tableName: 'ai_memories',     // default: 'ai_kit_memories'
   dimensions: 1536,             // default: 1536 (text-embedding-3-small)
   defaultScope: { domain: 'billing', enterpriseId: 'ent-1' },
@@ -600,18 +601,17 @@ const adapter = new PgVectorMemoryAdapter(dataSource, new OpenAIEmbeddings(), {
 
 await adapter.initialize();   // creates extension + table + indexes (idempotent)
 
-// Store a consolidated memory
+// Store a consolidated memory (embedding is auto-generated from content)
 await adapter.store({
   threadId: 'thread-1',
   userId: 'user-42',
   content: 'User prefers monthly invoices.',
-  embedding: await embeddings.embedQuery('User prefers monthly invoices.'),
   scope: { domain: 'billing' },
 });
 
 // Similarity search
 const results = await adapter.search('invoice preferences', {
-  topK: 5,
+  k: 5,
   scope: { projectId: 'proj-7' },
 });
 ```
@@ -624,6 +624,7 @@ const results = await adapter.search('invoice preferences', {
 
 **Database indexes created by `initialize()`:**
 - `CREATE EXTENSION IF NOT EXISTS vector`
+- `CREATE EXTENSION IF NOT EXISTS pgcrypto` (for `gen_random_uuid()`)
 - B-tree index on `thread_id`
 - GIN index on `scope` (efficient `@>` JSONB containment filtering)
 
@@ -1126,7 +1127,7 @@ See [Semantic memory → MemoryConsolidationService](#memoryconsolidationservice
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `consolidate(options)` | `Promise<void>` | Summarizes `messages` with the LLM and stores the result in the semantic adapter. |
+| `consolidate(options)` | `Promise<ConsolidatedMemoryEntry>` | Summarizes `messages` with the LLM and stores the result in the semantic adapter. |
 
 ---
 
@@ -1371,7 +1372,7 @@ interface IMemoryAdapter {
 }
 
 interface ISemanticMemoryAdapter extends IMemoryAdapter {
-  store(entry: ConsolidatedMemoryEntry): Promise<void>;
+  store(entry: ConsolidatedMemoryEntry): Promise<ConsolidatedMemoryEntry>;
   search(query: string, opts?: ISemanticSearchOptions): Promise<ConsolidatedMemoryEntry[]>;
 }
 
@@ -1383,7 +1384,7 @@ interface IMemoryConfig {
 }
 
 interface ISemanticSearchOptions {
-  topK?: number;
+  k?: number;
   scope?: MemoryScope;
 }
 

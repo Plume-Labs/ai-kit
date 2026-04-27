@@ -5,7 +5,6 @@ import { McpService } from '../services/mcp.service';
 import { SubAgentService } from './sub-agent.service';
 import { HitlService } from '../services/hitl.service';
 import { MemoryService } from '../services/memory.service';
-import { ISemanticMemoryAdapter } from '../interfaces/memory.interface';
 
 /**
  * Factory interne : construit un `Agent` à partir d'une `IAgentConfig`.
@@ -38,19 +37,6 @@ export class AgentFactory {
     const interruptOn = this.hitlService._buildInterruptOn(config.hitl);
     const checkpointer = this.memoryService.getCheckpointer(config.memoryId);
 
-    // Résoudre l'adaptateur sémantique si configuré
-    let semanticAdapter: ISemanticMemoryAdapter | undefined;
-    if (config.semanticMemory) {
-      try {
-        semanticAdapter = this.memoryService.resolveSemanticStore(
-          config.semanticMemory.semanticMemoryId,
-        );
-      } catch {
-        // Si l'adaptateur n'existe pas encore au moment de la création,
-        // on laisse semanticAdapter undefined (pas d'injection)
-      }
-    }
-
     const params: CreateDeepAgentParams = {
       model: model as any,
       tools: tools as any[],
@@ -63,6 +49,6 @@ export class AgentFactory {
 
     const internal = createDeepAgent(params as any);
 
-    return new Agent(config.id, internal, checkpointer, this.hitlService, config, semanticAdapter);
+    return new Agent(config.id, internal, checkpointer, this.hitlService, config, this.memoryService);
   }
 }

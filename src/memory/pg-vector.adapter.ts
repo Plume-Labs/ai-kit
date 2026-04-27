@@ -82,12 +82,25 @@ export class PgVectorMemoryAdapter implements ISemanticMemoryAdapter {
   private readonly dimensions: number;
   private readonly defaultScope: MemoryScope;
 
+  /**
+   * Regex d'identifiant SQL valide : lettres, chiffres, underscore, 1–63 caractères.
+   * Empêche toute injection SQL via le nom de table.
+   */
+  private static readonly VALID_IDENTIFIER = /^[a-zA-Z_][a-zA-Z0-9_]{0,62}$/;
+
   constructor(
     private readonly dataSource: IDataSource,
     private readonly embeddings: EmbeddingsInterface,
     options: IPgVectorMemoryOptions = {},
   ) {
-    this.tableName = options.tableName ?? 'ai_kit_memories';
+    const tableName = options.tableName ?? 'ai_kit_memories';
+    if (!PgVectorMemoryAdapter.VALID_IDENTIFIER.test(tableName)) {
+      throw new Error(
+        `[AiKit] Nom de table invalide : "${tableName}". ` +
+          'Seuls les identifiants SQL valides sont acceptés (lettres, chiffres, underscores).',
+      );
+    }
+    this.tableName = tableName;
     this.dimensions = options.dimensions ?? 1536;
     this.defaultScope = options.defaultScope ?? {};
   }
@@ -103,6 +116,7 @@ export class PgVectorMemoryAdapter implements ISemanticMemoryAdapter {
       await this.dataSource.initialize();
     }
     await this.dataSource.query('CREATE EXTENSION IF NOT EXISTS vector');
+    await this.dataSource.query('CREATE EXTENSION IF NOT EXISTS pgcrypto');
     await this.dataSource.query(`
       CREATE TABLE IF NOT EXISTS ${this.tableName} (
         id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
